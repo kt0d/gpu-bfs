@@ -11,7 +11,12 @@
 
 void usage(char *pname)
 {
-	std::cerr << "USAGE: " << pname << " " << std::endl;
+	std::cerr << "USAGE: " << pname << "[-p] [-l] [-q] [-c] FILENAME" << std::endl;
+	std::cerr << "-p Print size of matrix" << std::endl;
+	std::cerr << "-l Run linear-work BFS with blocking queue" << std::endl;
+	std::cerr << "-q Run quadratic-work BFS" << std::endl;
+	std::cerr << "-c Run CPU BFS and compare results for corectness" << std::endl;
+	std::cerr << "FILENAME must be square pattern matrix stored in Rutherford Boeing sparse matrix format (*.rb)" << std::endl;
 	exit(EXIT_FAILURE);
 }
 
