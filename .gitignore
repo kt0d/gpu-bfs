@@ -1,0 +1,7 @@
+# Ignore binary
+*.out
+# Vim swap files
+*.swp
+# Object files
+*.o
+
