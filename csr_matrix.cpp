@@ -4,53 +4,69 @@
 #include <limits>
 #include <string>
 
-
+// Creates symmetric matrix from lower triangular matrix in compressed sparse column format. Notice that symmetric matrix in compressed sparse column format is the same as in compressed sparse row format. Comments in this function refer to compressed sparse column format.
 csr::matrix csr::expand_symmetric_matrix(const csr::matrix mat)
 {
-	csr::matrix expand;
+	csr::matrix expanded;
 	const int n = mat.n;
-	expand.n=n;
-	expand.ptr = new int[expand.n+1];
+	expanded.n=n;
+	expanded.ptr = new int[expanded.n+1];
+
+	// Intialize column pointers array with zeros
 	for(int i = 0; i <= n; i++)
 	{
-		expand.ptr[i] = 0;
+		expanded.ptr[i] = 0;
 	}
+
+	// Count number of non-zero entries in upper triangular part, excluding main diagonal
 	for(int i = 0; i < n; i++)
 	{
 		for(int offset = mat.ptr[i]; offset < mat.ptr[i+1]; offset++)
 		{
-			int j = mat.index[offset];
+			const int j = mat.index[offset];
 			if(i != j)
-				expand.ptr[j]++;
+				expanded.ptr[j]++;
 		}
 	}
+
+	// Calculate inclusive prefix sum
 	for(int i = 0; i < n; i++)
-		expand.ptr[i+1]+=expand.ptr[i];
-	expand.nnz=expand.ptr[n]+mat.nnz;
-	expand.index = new int[expand.nnz];
+		expanded.ptr[i+1]+=expanded.ptr[i];
+
+	// Number of non-zero entries is now known.
+	expanded.nnz=expanded.ptr[n]+mat.nnz;
+	expanded.index = new int[expanded.nnz];
+
+	// Add exlusive prefix sum of counts of non-zero numbers in lower triangular part, including main diagonal
 	for(int i = 0; i <= n; i++)
-		expand.ptr[i]+=mat.ptr[i];
+		expanded.ptr[i]+=mat.ptr[i];
+	// Now expanded.ptr[i] points to place in column range where row indices from lower triangular matrix should be inserted to keep them in ascending order.
+
+
+	// Insert row indices from lower triangular part 
 	for(int i = 0; i < n; i++)
 	{
 		for(int offset = mat.ptr[i]; offset < mat.ptr[i+1]; offset++)
 		{
-			int j = offset-mat.ptr[i];
-			expand.index[expand.ptr[i]+j]=mat.index[offset];
+			const int in_range_offset = offset-mat.ptr[i];
+			expanded.index[expanded.ptr[i] + in_range_offset] = mat.index[offset];
 		}
 	}
-	for(int i = n; i >= 0; i--)
+
+	// Insert row indices from upper triangular part, excluding main diagonal. Loop is from (n-1) to 0 to keep row indices in column ranges in ascending order.
+	for(int i = n-1; i >= 0; i--)
 	{
 		for(int offset = mat.ptr[i]; offset < mat.ptr[i+1]; offset++)
 		{
-			int j = mat.index[offset];
+			const int j = mat.index[offset];
 			if(i != j)
 			{
-				expand.ptr[j]--;
-				expand.index[expand.ptr[j]]=i;
+				expanded.ptr[j]--;
+				expanded.index[expanded.ptr[j]]=i;
 			}
 		}
 	}
-	return expand;
+	return expanded;
 
 }
 
@@ -68,13 +84,13 @@ csr::matrix csr::load_matrix(std::istream& input)
 	input.ignore(inf,'\n');
 	// line 3
 	std::string matrix_type;
-	int n,m, entries;
 	input >> matrix_type;
-	char c = matrix_type[1];
+	const char c = matrix_type[1];
 	if(c == 's' || c == 'h' || c == 'z')
 		is_symmetric=true;
 	if(matrix_type[2] == 'e')
 		throw std::invalid_argument("matrix in elemental form");
+	int n,m, entries;
 	input >> n;
 	input >> m;
 	if(m != n)
@@ -97,22 +113,22 @@ csr::matrix csr::load_matrix(std::istream& input)
 	{
 		mat.index[j]=val-1;
 	}
-	csr::matrix tmp;
 	if(is_symmetric)
 	{
-		tmp = csr::expand_symmetric_matrix(mat);
+		csr::matrix tmp = csr::expand_symmetric_matrix(mat);
 		csr::dispose_matrix(mat);
 		mat=tmp;
 	}
 	else
 	{
-		tmp = csr::transpose_matrix(mat);
+		csr::matrix tmp = csr::transpose_matrix(mat);
 		csr::dispose_matrix(mat);
 		mat=tmp;
 	}
 	return mat;
 }
 
+// Comments refer to compressed sparse row format
 csr::matrix csr::transpose_matrix(const csr::matrix mat)
 {
 	csr::matrix trans;
@@ -120,19 +136,24 @@ csr::matrix csr::transpose_matrix(const csr::matrix mat)
 	trans.nnz=mat.nnz;
 	trans.ptr=new int[mat.n+1];
 	trans.index = new int[mat.nnz];
+
+	// Intialize column pointers array with zeros
 	for(int i = 0; i < trans.n+1; i++)
 		trans.ptr[i]=0;
-	for(int i = 0; i < trans.nnz; i++)
-		trans.index[i]=0;
+
+	// Count number of non-zero elements in every row of transposed matrix
 	for(int i = 0; i < mat.n; i++)
 	{
 		for(int j = mat.ptr[i]; j < mat.ptr[i+1]; j++)
 			trans.ptr[mat.index[j]]++;
 	}
 
+	// Calculate inclusive prefix sum to obtain row ranges.
 	for(int i = 0; i < trans.n; i++)
 		trans.ptr[i+1]+=trans.ptr[i];
+	// trans.ptr[i] now points to where range of (i+1)-th row starts
 
+	// Insert column indices in transposed matrix. Loop is from (n-1) to 0 to keep indices in ascending order.
 	for(int i = mat.n-1; i >= 0; i--)
 	{
 		for(int j = mat.ptr[i]; j < mat.ptr[i+1]; j++)
@@ -156,7 +177,10 @@ void csr::dispose_matrix(csr::matrix& mat)
 
 void csr::print_matrix(const csr::matrix mat, std::ostream& output)
 {
+	// Print size information
 	output << "Matrix of size " << mat.n << " with " << mat.nnz << " non-zero entries" << std::endl;
+
+	// Print matrix compressed sparse row/column format
 	output << "Compressed format:" << std::endl;
 	for(int i=0;i<mat.n+1;i++)
 	{
@@ -170,6 +194,7 @@ void csr::print_matrix(const csr::matrix mat, std::ostream& output)
 		output << std::endl;
 	}
 
+	// Print matrix in full form
 	output << "Expanded:" << std::endl;
 	for(int i=0; i < mat.n; i++)
 	{

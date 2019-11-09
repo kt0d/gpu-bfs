@@ -34,10 +34,10 @@ int compare_distance(const int* dist1,const int* dist2,const int n)
 
 int main(int argc, char **argv)
 {
-	bool run_linear = false, run_quadratic = false, compare = false, print_info = false;
+	bool run_linear = false, run_quadratic = false, compare = false, print_info = false, print_matrix = false;
 
 	char c;
-	while ((c = getopt(argc, argv, "lqcp")) != -1)
+	while ((c = getopt(argc, argv, "lqcpm")) != -1)
 		switch(c)
 		{
 			case 'l':
@@ -51,6 +51,9 @@ int main(int argc, char **argv)
 				break;
 			case 'p':
 				print_info=true;
+				break;
+			case 'm':
+				print_matrix=true;
 				break;
 			default:
 				usage(argv[0]);
@@ -67,6 +70,9 @@ int main(int argc, char **argv)
 
 	if(print_info)
 		std::cout << "Matrix of size " << mat.n << std::endl;
+
+	if(print_matrix)
+		csr::print_matrix(mat,std::cout);
 
 	bfs::result cpu_result, linear_result, quadratic_result;
 	if(compare)

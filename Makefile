@@ -16,7 +16,7 @@ all: main
 debug: DEBUG+=-g 
 debug: main
 
-bfs_cpu.o: csr_matrix.h common.h bfs_cpu.h
+bfs_cpu.o: csr_matrix.h common.h bfs_cpu.h bfs_cpu.cpp
 	${NVCC} ${DEBUG} -c ${CUDA_COMPILER_OPTIONS} bfs_cpu.cpp
 
 bfs.o: bfs.cu bfs.cuh common.h

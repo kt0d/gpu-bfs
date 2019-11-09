@@ -5,36 +5,36 @@
 #include <queue>
 #include <chrono>
 
-bfs::result cpu_bfs(const csr::matrix mat, int starting_vertex)
+bfs::result cpu_bfs(const csr::matrix mat, const int starting_vertex)
 {
-	int* dist = new int[mat.n];
+	int* const dist = new int[mat.n];
 
-	auto start = std::chrono::system_clock::now();
-
+	const auto start = std::chrono::system_clock::now();
 
 	std::queue<int> q;
 	for(int i = 0; i < mat.n; i++)
 		dist[i]=bfs::infinity;
 	dist[starting_vertex]=0;
+
 	q.push(starting_vertex);
 	while(!q.empty())
 	{
-		int i = q.front();
+		const int vertex = q.front();
 		q.pop();
-		for(int offset = mat.ptr[i]; offset < mat.ptr[i+1]; offset++)
+		for(int offset = mat.ptr[vertex]; offset < mat.ptr[vertex+1]; offset++)
 		{
-			int j = mat.index[offset];
-			if(dist[j] == bfs::infinity)
+			int neighbor = mat.index[offset];
+			if(dist[neighbor] == bfs::infinity)
 			{
-				dist[j] = dist[i] + 1;
-				q.push(j);
+				dist[neighbor] = dist[vertex] + 1;
+				q.push(neighbor);
 			}
 		}
 	}
 
 
-	auto stop = std::chrono::system_clock::now();
-	std::chrono::duration<float, std::milli> diff = stop - start;
+	const auto stop = std::chrono::system_clock::now();
+	const std::chrono::duration<float, std::milli> diff = stop - start;
 
 	bfs::result result;
 	result.total_time = diff.count();
