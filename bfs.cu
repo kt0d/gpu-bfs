@@ -6,8 +6,10 @@
 #include <cuda_profiler_api.h>
 #include <helper_cuda.h>
 
-#define WARP_SIZE 32
-#define BLOCK_SIZE 512
+constexpr size_t WARP_SIZE= 32;
+constexpr size_t BLOCK_SIZE = 512;
+constexpr size_t WARPS = BLOCK_SIZE / WARP_SIZE;
+constexpr size_t HASH_RANGE = 128;
 
 
 // Calculate number of needed blocks
@@ -70,7 +72,7 @@ void initialize_vertex_queue(const int n, const int starting_vertex, int*& d_in_
 	checkCudaErrors(cudaMalloc((void**)&d_in_queue,n * sizeof(int)));
 	checkCudaErrors(cudaMalloc((void**)&d_out_queue,n * sizeof(int)));
 
-	// Allocate and map host memory
+	// Allocate host memory and map it to device memory
 	checkCudaErrors(cudaHostAlloc((void**)&h_in_queue_count,sizeof(int),cudaHostAllocMapped));
 	checkCudaErrors(cudaHostGetDevicePointer((void**)&d_in_queue_count,(void*)h_in_queue_count,0));
 	checkCudaErrors(cudaHostAlloc((void**)&h_out_queue_count,sizeof(int),cudaHostAllocMapped));
@@ -123,45 +125,178 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 
 	// Calculate corresponding vertex in queue
 	int id = blockIdx.x*blockDim.x + threadIdx.x;
-	if(id >= *in_queue_count) return;
-
-	// Get vertex from the queue
-	int v = in_queue[id];
-	for(int offset = row_offset[v]; offset < row_offset[v+1]; offset++)
-	{
-		int j = column_index[offset];
-		if(distance[j] == bfs::infinity)
-		{
-			distance[j]=iteration+1;
-			// Locekd enqueue
-			int ind = atomicAdd(out_queue_count,1);
-			out_queue[ind]=j;
-		}
-	}
+	if(id < *in_queue_count) 
+    {
+        // Get vertex from the queue
+        int v = in_queue[id];
+        for(int offset = row_offset[v]; offset < row_offset[v+1]; offset++)
+        {
+            int j = column_index[offset];
+            if(distance[j] == bfs::infinity)
+            {
+                distance[j]=iteration+1;
+                // Locekd enqueue
+                int ind = atomicAdd(out_queue_count,1);
+                out_queue[ind]=j;
+            }
+        }
+    }
 
 }
 
-__global__ void expand_contract_bfs(const int n, const int* row_offset, const int* column_index, int* distance, const int iteration,const int* in_queue,const int* in_queue_count, int* out_queue, int* out_queue_count)
+__device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
+{
+	const int hash = v & (HASH_RANGE-1);
+	const int warp_id = threadIdx.x / WARP_SIZE;
+    scratch[warp_id][hash] = v;
+    __syncwarp();
+    const int retrieved = scratch[warp_id][hash];
+    if (retrieved == v)
+    {
+        scratch[warp_id][hash] = threadIdx.x;
+    }
+    __syncwarp();
+    if (retrieved == v && scratch[warp_id][hash] != threadIdx.x)
+    {
+        return true;
+    }
+	return false;
+}
+
+__device__ bool history_cull()
 {
 
-	int id = blockIdx.x*blockDim.x + threadIdx.x;
-	if(id >= *in_queue_count) return;
+	return false;
+}
 
-	// Get vertex from the queue
-	int v = in_queue[id];
+__device__ int2 block_prefix_sum(const int val)
+{
+    __shared__ int sums[WARPS];
+    int value = val;
+
+    const int lane_id = threadIdx.x % WARP_SIZE;
+    const int warp_id = threadIdx.x / WARP_SIZE;
+    
+    for(int i = 1; i <= WARP_SIZE; i <<= 1)
+    {
+        const unsigned int mask = 0xffffffff;
+        const int n = __shfl_up_sync(mask, value, i, WARP_SIZE);
+        if (lane_id >= i)
+            value += n;
+    }
+
+    if (threadIdx.x % WARP_SIZE == WARP_SIZE- 1)
+    {
+        sums[warp_id] = value;
+    }
+
+    __syncthreads();
+
+    if (warp_id == 0 && lane_id < (blockDim.x / WARP_SIZE))
+    {
+        int warp_sum = sums[lane_id];
+        const unsigned int mask = (1 << (WARPS)) - 1;
+        for (int i = 1; i <= WARPS; i <<= 1)
+        {
+            const int n = __shfl_up_sync(mask, warp_sum, i, WARPS);
+            if (lane_id >= i)
+                warp_sum += n;
+        }
+
+        sums[lane_id] = warp_sum;
+    }
+
+    __syncthreads();
+
+    if (warp_id > 0)
+    {
+       const int block_sum = sums[warp_id-1];
+       value += block_sum;
+    }
+    
+    int2 result;
+    result.x = value - val;
+    result.y = sums[WARPS-1];
+    return result; 
+}
 
 
-	// Local warp-culling
-	// Local history-culling
-	// Load corresponding row-ranges
-	// Coarse-grained neigbor-gathering
-	// Fine-grained neigbor-gathering
+__global__ void expand_contract_bfs(const int n, const int* row_offset, const int* column_index, int* distance, const int iteration,const int* in_queue,const int* in_queue_count, int* out_queue, int* out_queue_count)
+{
+    int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    //if(tid >= *in_queue_count) return; // you can't do this
 
-	// Look up status
-	// Update label
-	// Prefix sum
-	// Obtain base enqueue offset
-	// Write to queue
+    int count = *in_queue_count;
+
+    // Get vertex from the queue
+    const int v = tid < count? in_queue[tid]:-1;
+
+    // Local warp-culling
+    volatile __shared__ int scratch[WARPS][HASH_RANGE];
+    bool is_duplicate = warp_cull(scratch, v);
+    is_duplicate = v == -1?true:false;
+    // Local history-culling
+    // TODO
+    //volatile __shared__ int history[BLOCK_SIZE][2];
+
+    // Load corresponding row-ranges
+    int r = is_duplicate?0:row_offset[v];
+    int r_end = is_duplicate?0:row_offset[v+1];
+
+    // Fine-grained neigbor-gathering
+    // Prefix scan
+    int2 ranks = block_prefix_sum(r_end-r);
+
+    int rsv_rank = ranks.x;
+    int total = ranks.y;
+
+    //printf("%d %d\n",r,r_end);
+    //printf("%d %d\n",rsv_rank,total);
+
+    __shared__ int comm[BLOCK_SIZE];
+    int cta_progress = 0;
+    int remain;
+    while ((remain = total - cta_progress) > 0)
+    {
+        while((rsv_rank < cta_progress + BLOCK_SIZE) && (r < r_end))
+        {
+            comm[rsv_rank - cta_progress] = r;
+            rsv_rank++;
+            r++;
+        }
+        __syncthreads();
+        int neighbor;
+        bool is_valid = false;
+        if (threadIdx.x < remain && threadIdx.x < BLOCK_SIZE)
+        {
+            neighbor = column_index[comm[threadIdx.x]];
+            // Look up status
+            is_valid = distance[neighbor] == bfs::infinity;
+            if(is_valid)
+            {
+                // Update label
+                distance[neighbor] = iteration + 1;
+            }
+        }
+            // Prefix sum
+            int2 queue_offset = block_prefix_sum(is_valid?1:0);
+            __shared__ int base_offset[1];
+            // Obtain base enqueue offset
+            if(threadIdx.x == 0)
+                base_offset[0] = atomicAdd(out_queue_count,queue_offset.y);
+            __syncthreads();
+            // Write to queue
+            if (is_valid)
+                out_queue[base_offset[0]+queue_offset.x] = neighbor;
+
+        
+        cta_progress += BLOCK_SIZE;
+        __syncthreads();
+    }
+
+
+
+
 }
 
 bfs::result run_linear_bfs(const csr::matrix graph, int starting_vertex)
@@ -189,9 +324,6 @@ bfs::result run_linear_bfs(const csr::matrix graph, int starting_vertex)
 	cudaEventRecord(start);
 	cudaProfilerStart();
 	// Algorithm
-	// Intialize queues and queue counters
-	checkCudaErrors(cudaMemcpy(d_in_queue, &starting_vertex, sizeof(int), cudaMemcpyHostToDevice));
-
 	*h_in_queue_count=1;
 	*h_out_queue_count=0;
 
@@ -336,9 +468,6 @@ bfs::result run_expand_contract_bfs(csr::matrix graph, int starting_vertex)
 	cudaEventRecord(start);
 	cudaProfilerStart();
 	// Algorithm
-	// Intialize queues and queue counters
-	checkCudaErrors(cudaMemcpy(d_in_queue, &starting_vertex, sizeof(int), cudaMemcpyHostToDevice));
-
 	*h_in_queue_count=1;
 	*h_out_queue_count=0;
 
@@ -354,7 +483,7 @@ bfs::result run_expand_contract_bfs(csr::matrix graph, int starting_vertex)
 		int num_of_blocks = div_up(*h_in_queue_count,BLOCK_SIZE);
 
 		// Run kernel
-		expand_contract<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue,d_in_queue_count, d_out_queue, d_out_queue_count);
+		expand_contract_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue,d_in_queue_count, d_out_queue, d_out_queue_count);
 		checkCudaErrors(cudaDeviceSynchronize());
 
 		// Increment iteration counf
