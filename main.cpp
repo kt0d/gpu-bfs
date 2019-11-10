@@ -11,12 +11,14 @@
 
 void usage(char *pname)
 {
-	std::cerr << "USAGE: " << pname << "[-p] [-l] [-q] [-c] FILENAME" << std::endl;
-	std::cerr << "-p Print size of matrix" << std::endl;
-	std::cerr << "-l Run linear-work BFS with blocking queue" << std::endl;
-	std::cerr << "-q Run quadratic-work BFS" << std::endl;
-	std::cerr << "-c Run CPU BFS and compare results for corectness" << std::endl;
-	std::cerr << "FILENAME must be square pattern matrix stored in Rutherford Boeing sparse matrix format (*.rb)" << std::endl;
+	std::cerr << "USAGE: " << pname << "[-p] [-m] [-l] [-q] [-c] [-e] FILENAME" << std::endl
+	 << "-p Print size of matrix" << std::endl
+     << "-m Print matrix" << std:: endl
+	 << "-l Run linear-work BFS with blocking queue" << std::endl
+	 << "-q Run quadratic-work BFS" << std::endl
+     << "-e Run expand-contract BFS" << std::endl
+	 << "-c Run CPU BFS and compare results for corectness" << std::endl
+	 << "FILENAME must be square pattern matrix stored in Rutherford Boeing sparse matrix format (*.rb)" << std::endl;
 	exit(EXIT_FAILURE);
 }
 
@@ -31,6 +33,11 @@ int compare_distance(const int* dist1,const int* dist2,const int n)
 	else
 		std::cout << "OK" << std::endl;
 	return diff;
+}
+
+void print_result(const bfs::result result, const char* method)
+{
+    std::cout << method << " with time " << std::fixed << std::setprecision(10) << result.total_time << std::endl;
 }
 
 int main(int argc, char **argv)
@@ -73,7 +80,7 @@ int main(int argc, char **argv)
 	rb_file.close();
 
 	if(print_info)
-		std::cout << "Matrix of size " << mat.n << std::endl;
+		std::cout << "Matrix of size " << mat.n << " with " << mat.nnz << " non-zero elements" << std::endl;
 
 	if(print_matrix)
 		csr::print_matrix(mat,std::cout);
@@ -82,12 +89,12 @@ int main(int argc, char **argv)
 	if(compare)
 	{
 		cpu_result = cpu_bfs(mat);
-		std::cout << "CPU with time " << std::fixed << std::setprecision(10) << cpu_result.total_time << std::endl;
+        print_result(cpu_result,"CPU");
 	}
 	if(run_linear)
 	{
 		linear_result = run_linear_bfs(mat);
-		std::cout << "Linear with time " << std::fixed << std::setprecision(10) << linear_result.total_time << std::endl;
+        print_result(linear_result,"Linear");
 		if(compare)
 		{
 			compare_distance(cpu_result.distance,linear_result.distance,mat.n);
@@ -96,7 +103,7 @@ int main(int argc, char **argv)
 	if(run_quadratic)
 	{
 		quadratic_result = run_quadratic_bfs(mat);
-		std::cout << "Quadratic with time " <<  std::fixed << std::setprecision(10) << quadratic_result.total_time << std::endl;
+        print_result(quadratic_result,"Quadratic");
 		if(compare)
 		{
 			compare_distance(cpu_result.distance,quadratic_result.distance,mat.n);
@@ -105,7 +112,7 @@ int main(int argc, char **argv)
 	if(run_expand_contract)
 	{
 		expand_contract_result = run_expand_contract_bfs(mat);
-		std::cout << "Expand contract with time " <<  std::fixed << std::setprecision(10) << expand_contract_result.total_time << std::endl;
+        print_result(expand_contract_result,"Expand-contract");
 		if(compare)
 		{
 			compare_distance(cpu_result.distance,expand_contract_result.distance,mat.n);
