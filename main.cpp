@@ -105,7 +105,7 @@ int main(int argc, char **argv)
 	if(run_expand_contract)
 	{
 		expand_contract_result = run_expand_contract_bfs(mat);
-		std::cout << "Expand contract with time " <<  std::fixed << std::setprecision(10) << quadratic_result.total_time << std::endl;
+		std::cout << "Expand contract with time " <<  std::fixed << std::setprecision(10) << expand_contract_result.total_time << std::endl;
 		if(compare)
 		{
 			compare_distance(cpu_result.distance,expand_contract_result.distance,mat.n);
