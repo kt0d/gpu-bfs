@@ -4,4 +4,6 @@
 *.swp
 # Object files
 *.o
+
 main
+errors
