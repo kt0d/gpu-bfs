@@ -9,5 +9,5 @@ namespace bfs
 		float total_time;
 	};
 
-	const int infinity = std::numeric_limits<int>::max();
+	constexpr int infinity = std::numeric_limits<int>::max();
 }
