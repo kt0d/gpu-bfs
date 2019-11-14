@@ -51,17 +51,25 @@ __device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
 {
     const int hash = v & (HASH_RANGE-1);
     const int warp_id = threadIdx.x / WARP_SIZE;
+    const int index = warp_id*HASH_RANGE + hash;
+    
+
+    // Threads without valid vertex provide -1 as v. They must enter this function, because they are needed for __syncwarp (which is only useful for Volta arch)
     if (v != -1)
-        scratch[warp_id][hash] = v;
+        scratch[warp_id][hash]= v;
     __syncwarp();
     const int retrieved = scratch[warp_id][hash];
     if (retrieved == v)
     {
+	    // Vie to be the only thread in warp inspecting vertex v
         scratch[warp_id][hash] = threadIdx.x;
     }
     __syncwarp();
+    if(v == -1)
+        return false;
     if (retrieved == v && scratch[warp_id][hash] != threadIdx.x)
     {
+	    // Some other thread has this vertex
         return true;
     }
     return false;
@@ -69,7 +77,7 @@ __device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
 
 __device__ bool history_cull()
 {
-
+    //TODO
     return false;
 }
 
@@ -119,7 +127,6 @@ __device__ int2 block_prefix_sum(const int val)
 
     __syncthreads();
 
-
     // Add total sum of previous warps to current element
     if (warp_id > 0)
     {
@@ -137,10 +144,10 @@ __device__ int2 block_prefix_sum(const int val)
 
 __device__ bool status_lookup(int * const distance,const cudaSurfaceObject_t bitmask_surf, const int neighbor)
 {
+	// Just check status directly if bitmask is unavailable
     if (bitmask_surf == 0)
         return distance[neighbor] == bfs::infinity;
     bool not_visited = false;
-
 
     const unsigned int neighbor_mask = (1 << (neighbor % (8 * sizeof(unsigned int))));
     unsigned int mask = 0;
@@ -155,7 +162,7 @@ __device__ bool status_lookup(int * const distance,const cudaSurfaceObject_t bit
 
     if(not_visited)
     {
-
+        // Update bitmask
         mask |= neighbor_mask;
         surf1Dwrite(mask,bitmask_surf,count * 4);	
     }
@@ -200,7 +207,7 @@ __device__ void block_coarse_grained_gather(const int* const column_index, int* 
                     distance[neighbor] = iteration + 1;
                 }
             }
-            // Prefix sum
+            // Obtain offset in queue by prefix sum
             const int2 queue_offset = block_prefix_sum(is_valid?1:0);
             volatile __shared__ int base_offset[1];
             // Obtain base enqueue offset
@@ -280,7 +287,6 @@ __syncwarp();
 __device__ void fine_grained_gather(const int* const column_index, int* const distance,cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
 {
     // Fine-grained neigbor-gathering
-    // Prefix scan
     int2 ranks = block_prefix_sum(r_end-r);
 
     int rsv_rank = ranks.x;
@@ -292,6 +298,8 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
 
     while ((remain = total - cta_progress) > 0)
     {
+        // Pack shared array with neighbors from adjacency lists
+        // Notice that only threads with adjacency lists longer than BLOCK_SIZE will enter this loop more than one time
         while((rsv_rank < cta_progress + BLOCK_SIZE) && (r < r_end))
         {
             comm[rsv_rank - cta_progress] = r;
@@ -301,7 +309,7 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
         __syncthreads();
         int neighbor;
         bool is_valid = false;
-        if (threadIdx.x < remain && threadIdx.x < BLOCK_SIZE)
+        if (threadIdx.x < remain)
         {
             neighbor = column_index[comm[threadIdx.x]];
             // Look up status
@@ -312,8 +320,8 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
                 distance[neighbor] = iteration + 1;
             }
         }
-        // Prefix sum
         __syncthreads();
+            // Obtain offset in queue by performing prefix sum
         const int2 queue_offset = block_prefix_sum(is_valid?1:0);
         volatile __shared__ int base_offset[1];
         // Obtain base enqueue offset
@@ -323,10 +331,6 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
 }
         __syncthreads();
         const int queue_index = base_offset[0] + queue_offset.x;
-        // Can't write to queue more than n items
-        //if(is_valid && queue_index >= n)
-        //{
-        //}
         // Write to queue
         if (is_valid)
         {
@@ -340,10 +344,10 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
 
 __global__ void expand_contract_bfs(const int n, const int* row_offset, const int* column_index, int* distance, const int iteration,const int* in_queue,const int* in_queue_count, int* out_queue, int* out_queue_count, cudaSurfaceObject_t bitmask_surf)
 {
-    int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    const int tid = blockIdx.x*blockDim.x + threadIdx.x;
     //if(tid >= *in_queue_count) return; // you can't do this
 
-    int queue_count = *in_queue_count;
+    const int queue_count = *in_queue_count;
 
     // Get vertex from the queue
     const int v = tid < queue_count? in_queue[tid]:-1;
