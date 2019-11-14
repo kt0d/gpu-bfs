@@ -23,7 +23,7 @@ bfs::result cpu_bfs(const csr::matrix mat, const int starting_vertex)
 		q.pop();
 		for(int offset = mat.ptr[vertex]; offset < mat.ptr[vertex+1]; offset++)
 		{
-			int neighbor = mat.index[offset];
+			const int neighbor = mat.index[offset];
 			if(dist[neighbor] == bfs::infinity)
 			{
 				dist[neighbor] = dist[vertex] + 1;
