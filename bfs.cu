@@ -105,6 +105,7 @@ void initialize_edge_queue(const int m, int*& d_queue, int*& queue_count)
 
 	// Allocate counters as unified memory
 	checkCudaErrors(cudaMallocManaged((void**)&queue_count,sizeof(int)));
+	checkCudaErrors(cudaDeviceSynchronize()); // without this you can get bus error sometimes (try -qle kron_g500
 	*queue_count = 0;
 }
 
@@ -404,13 +405,13 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int starting_vertex)
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-
 	// Start time measurement
-	cudaEventRecord(start);
+    cudaEventRecord(start);
 	cudaEventSynchronize(start);
 	cudaProfilerStart();
-		checkCudaErrors(cudaDeviceSynchronize());
+	checkCudaErrors(cudaDeviceSynchronize());
 	// Algorithm
+    std::cout << "start" << std::endl;
 
 	int iteration = 0;
 	while(*in_queue_count > 0)
@@ -418,11 +419,13 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int starting_vertex)
 		// Empty out queue
 		*out_queue_count = 0;
 
+		//checkCudaErrors(cudaMemPrefetchAsync((void*)out_queue_count,sizeof(int),device));
+		//checkCudaErrors(cudaMemPrefetchAsync((void*)in_queue_count,sizeof(int),device));
 		// Calculate number of blocks
 		const int num_of_blocks = div_up(*in_queue_count,BLOCK_SIZE);
 
-		std::cout << "=====================" << std::endl;
-//		std::cout <<"in: " << *in_queue_count << std::endl;
+		//std::cout << "=====================" << std::endl;
+		//std::cout <<"in: " << *in_queue_count << std::endl;
 		// Run kernel
 		contract_expand_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n, d_row_offset, d_column_index, d_distance, iteration, d_in_queue, in_queue_count, d_out_queue, out_queue_count);
 		checkCudaErrors(cudaDeviceSynchronize());
@@ -435,6 +438,7 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int starting_vertex)
 
 	}
 	cudaProfilerStop();
+    std::cout << "stop" << std::endl;
 
 	// Calculate elapsed time
 	cudaEventRecord(stop);

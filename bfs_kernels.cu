@@ -6,12 +6,12 @@
 __global__ void quadratic_bfs(const int n, const int* row_offset, const int* column_index, int*const distance, const int iteration, bool*const done)
 {
 	// Calculate corresponding vertex
-	const int id = blockIdx.x*blockDim.x + threadIdx.x;
+	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 
-	if(id < n && distance[id] == iteration)
+	if(global_tid < n && distance[global_tid] == iteration)
 	{
 		bool local_done=true;
-		for(int offset = row_offset[id]; offset < row_offset[id+1]; offset++)
+		for(int offset = row_offset[global_tid]; offset < row_offset[global_tid+1]; offset++)
 		{
 			int j = column_index[offset];
 			if(distance[j] > iteration+1)
@@ -28,11 +28,11 @@ __global__ void quadratic_bfs(const int n, const int* row_offset, const int* col
 __global__ void linear_bfs(const int n, const int* row_offset, const int*const column_index, int*const distance, const int iteration,const int*const in_queue,const int*const in_queue_count, int*const out_queue, int*const out_queue_count)
 {
 	// Calculate corresponding vertex in queue
-	const int id = blockIdx.x*blockDim.x + threadIdx.x;
-	if(id < *in_queue_count) 
+	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
+	if(global_tid < *in_queue_count) 
 	{
 		// Get vertex from the queue
-		int v = in_queue[id];
+		int v = in_queue[global_tid];
 		for(int offset = row_offset[v]; offset < row_offset[v+1]; offset++)
 		{
 			int j = column_index[offset];
@@ -173,14 +173,13 @@ __device__ bool status_lookup(int * const distance,const cudaSurfaceObject_t bit
 __device__ void block_coarse_grained_gather(const int* const column_index, int* const distance, cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
 {
 	volatile __shared__ int comm[3];
-	const int thread_id = threadIdx.x;
 	while(__syncthreads_or(r_end-r))
 	{
 		// Vie for control of blokc
 		if(r_end-r)
-			comm[0] = thread_id;
+			comm[0] = threadIdx.x;
 		__syncthreads();
-		if(comm[0] == thread_id)
+		if(comm[0] == threadIdx.x)
 		{
 			// If won, share your range to entire block
 			comm[1] = r;
@@ -188,7 +187,7 @@ __device__ void block_coarse_grained_gather(const int* const column_index, int* 
 			r = r_end;
 		}
 		__syncthreads();
-		int r_gather = comm[1] + thread_id;
+		int r_gather = comm[1] + threadIdx.x;
 		const int r_gather_end = comm[2];
 		const int total = comm[2] - comm[1];
 		int block_progress = 0;
@@ -347,13 +346,13 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
 
 __global__ void expand_contract_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration,const int* const in_queue,const int* const in_queue_count, int* const out_queue, int* const out_queue_count, cudaSurfaceObject_t bitmask_surf)
 {
-	const int tid = blockIdx.x*blockDim.x + threadIdx.x;
-	//if(tid >= *in_queue_count) return; // you can't do this
+	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
+	//if(global_tid >= *in_queue_count) return; // you can't do this
 
 	const int queue_count = *in_queue_count;
 
 	// Get vertex from the queue
-	const int v = tid < queue_count? in_queue[tid]:-1;
+	const int v = global_tid < queue_count? in_queue[global_tid]:-1;
 
 	// Local warp-culling
 	volatile __shared__ int scratch[WARPS][HASH_RANGE];
@@ -414,12 +413,12 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
 
 __global__ void contract_expand_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int* const in_queue_count, int* const out_queue, int* const out_queue_count)
 {
-	const int tid = blockIdx.x*blockDim.x + threadIdx.x;
+	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 	const int queue_count = *in_queue_count;
-	const int v = tid < queue_count? in_queue[tid]:-1;
+	const int v = global_tid < queue_count? in_queue[global_tid]:-1;
 	//printf("%d,",v);
 	bool is_valid = false;
-	if(tid < queue_count)
+	if(global_tid < queue_count)
 	{
 		//printf("%d,",v);
 		is_valid = distance[v] == bfs::infinity;
@@ -437,24 +436,29 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	}
 
 	int2 prescan_result = block_prefix_sum(r_end - r);
-	//printf("%d:%d:%d,  ",tid,prescan_result.x,r_end-r);
+	//printf("%d:%d:%d,  ",global_tid,prescan_result.x,r_end-r);
 	
-	//printf("%d:%d:%d\n",tid,prescan_result.x,r_end-r);
+	//printf("%d:%d:%d\n",global_tid,prescan_result.x,r_end-r);
 	//printf("rsv:%d",prescan_result.x);
 	volatile __shared__ int base_offset[1];
-	if(tid == 0)
+	if(threadIdx.x == 0)
 		base_offset[0] = atomicAdd(out_queue_count, prescan_result.y);
 	__syncthreads();
-	if(is_valid)
+	/*
+	int queue_index = base_offset[0] + prescan_result.x;
 		for(int i = r; i < r_end; i++)
 		{
-			out_queue[base_offset[0]+prescan_result.x+i-r] = column_index[i];
+			if(queue_index >= *out_queue_count)
+				printf("error %d >= %d\n",queue_index,*out_queue_count);
+			out_queue[queue_index] = column_index[i];
+			queue_index++;
 		}
-	/*
+		*/
+	
 	fine_grained_gather(column_index, distance, out_queue, out_queue_count, r, r_end, prescan_result.x, prescan_result.y, base_offset[0]);
-	if(tid == 0)
-	printf("base:%d total:%d\n",base_offset[0],prescan_result.y);
-	*/
+	//if(global_tid == 0)
+	//printf("base:%d total:%d\n",base_offset[0],prescan_result.y);
+	
 
 }
 
