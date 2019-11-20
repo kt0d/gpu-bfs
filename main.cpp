@@ -25,11 +25,20 @@ void usage(char *pname)
 int compare_distance(const int* dist1,const int* dist2,const int n)
 {
 	int diff = 0;
+	int small = 0;
+	int inf = 0;
 
 	for(int i = 0; i < n; i++)
-		if(dist1[i] != dist2[i]) diff++;
+	{
+		if(dist1[i] != dist2[i])
+		{
+			diff++;
+			if(dist1[i] > dist2[i]) small++;
+			if(dist2[i] == bfs::infinity) inf++;
+		}
+	}
 	if(diff)
-		std::cout << "NOT OK: " << diff << " OF " << n << std::endl;
+		std::cout << "NOT OK: " << diff << " OF " << n << " WITH " << small << " SMALLER AND " << inf << " NOT REACHED" << std::endl;
 	else
 		std::cout << "OK" << std::endl;
 	return diff;
@@ -42,10 +51,10 @@ void print_result(const bfs::result result, const char* method)
 
 int main(int argc, char **argv)
 {
-	bool run_linear = false, run_quadratic = false, compare = false, print_info = false, print_matrix = false, run_expand_contract = false;
+	bool run_linear = false, run_quadratic = false, compare = false, print_info = false, print_matrix = false, run_expand_contract = false, run_contract_expand = false;
 
 	char c;
-	while ((c = getopt(argc, argv, "lqcpme")) != -1)
+	while ((c = getopt(argc, argv, "lqcpmeE")) != -1)
 		switch(c)
 		{
 			case 'l':
@@ -66,6 +75,9 @@ int main(int argc, char **argv)
 			case 'e':
 				run_expand_contract = true;
 				break;
+			case 'E':
+				run_contract_expand = true;
+				break;
 			default:
 				usage(argv[0]);
 		}
@@ -85,7 +97,7 @@ int main(int argc, char **argv)
 	if(print_matrix)
 		csr::print_matrix(mat,std::cout);
 
-	bfs::result cpu_result, linear_result, quadratic_result, expand_contract_result;
+	bfs::result cpu_result, linear_result, quadratic_result, expand_contract_result, contract_expand_result;
 	if(compare)
 	{
 		cpu_result = cpu_bfs(mat);
@@ -118,7 +130,16 @@ int main(int argc, char **argv)
 			compare_distance(cpu_result.distance,expand_contract_result.distance,mat.n);
 		}
 	}
+	if(run_contract_expand)
+	{
+		contract_expand_result = run_contract_expand_bfs(mat);
+		print_result(contract_expand_result,"Contract-expand");
+		if(compare)
+			compare_distance(cpu_result.distance, contract_expand_result.distance, mat.n);
+	}
 
+	if(run_contract_expand)
+		delete[] contract_expand_result.distance;
 	if(run_expand_contract)
 		delete[] expand_contract_result.distance;
 	if(run_quadratic)

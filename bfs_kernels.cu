@@ -1,6 +1,8 @@
 #include "common.h"
 #include "bfs_kernels.cuh"
 
+#include <stdio.h>
+
 __global__ void quadratic_bfs(const int n, const int* row_offset, const int* column_index, int*const distance, const int iteration, bool*const done)
 {
 	// Calculate corresponding vertex
@@ -25,7 +27,6 @@ __global__ void quadratic_bfs(const int n, const int* row_offset, const int* col
 
 __global__ void linear_bfs(const int n, const int* row_offset, const int*const column_index, int*const distance, const int iteration,const int*const in_queue,const int*const in_queue_count, int*const out_queue, int*const out_queue_count)
 {
-
 	// Calculate corresponding vertex in queue
 	const int id = blockIdx.x*blockDim.x + threadIdx.x;
 	if(id < *in_queue_count) 
@@ -51,7 +52,7 @@ __device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
 {
 	const int hash = v & (HASH_RANGE-1);
 	const int warp_id = threadIdx.x / WARP_SIZE;
-	const int index = warp_id*HASH_RANGE + hash;
+	//const int index = warp_id*HASH_RANGE + hash;
 
 	// Threads without valid vertex provide -1 as v. They must enter this function, because they are needed for __syncwarp (which is only useful for Volta arch)
 	if (v != -1)
@@ -84,7 +85,7 @@ __device__ int2 block_prefix_sum(const int val)
 {
 	// Heavily inspired/copied from sample "shfl_scan" provied by NVIDIA
 	// Block-wide prefix sum using shfl intrinsic
-	__shared__ int sums[WARPS];
+	volatile __shared__ int sums[WARPS];
 	int value = val;
 
 	const int lane_id = threadIdx.x % WARP_SIZE;
@@ -109,7 +110,7 @@ __device__ int2 block_prefix_sum(const int val)
 	__syncthreads();
 
 	// Prefix sum of warp sums
-	if (warp_id == 0 && lane_id < (blockDim.x / WARP_SIZE))
+	if (warp_id == 0 && lane_id < WARPS)
 	{
 		int warp_sum = sums[lane_id];
 		const unsigned int mask = (1 << (WARPS)) - 1;
@@ -226,61 +227,65 @@ __device__ void block_coarse_grained_gather(const int* const column_index, int* 
 
 /*
    __device__ void warp_coarse_grained_gather(const int* const column_index, int* const distance, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
-   {
-   volatile __shared__ int comm[WARPS][3];
-   const int thread_id = threadIdx.x;
-   const int lane_id = threadIdx.x % WARP_SIZE;
-   const int warp_id = threadIdx.x / WARP_SIZE;
-   while(__any_sync(r_end-r))
-   {
-   if(r_end-r)
-   comm[warp_id][0] = lane_id;
-   __syncwarp();
-   if(comm[warp_id][0] == thread_id)
-   {
-   comm[warp_id][1] = r;
-   comm[warp_id][2] = r_end;
-   r = r_end;
-   }
-   __syncwarp();
-   int r_gather = comm[1] + lane_id;
-   const int r_gather_end = comm[2];
-   int warp_progress = 0;
-   const int total = comm[2] - comm[1];
-   while((total - block_progress) > 0)
-   {
-   int neighbor = -1;
-   bool is_valid = false;
-   if (r_gather < r_gather_end)
-   {
-   neighbor = column_index[r_gather];
-// Look up status
-is_valid = status_lookup(distance, neighbor);
-if(is_valid)
 {
-// Update label
-distance[neighbor] = iteration + 1;
-}
-}
-// Prefix sum
-const int2 queue_offset = block_prefix_sum(is_valid?1:0);
-volatile __shared__ int base_offset[1];
-// Obtain base enqueue offset
-if(threadIdx.x == 0)
-base_offset[0] = atomicAdd(out_queue_count,queue_offset.y);
-__syncwarp();
-// Write to queue
-if (is_valid)
-out_queue[base_offset[0]+queue_offset.x] = neighbor;
+	volatile __shared__ int comm[WARPS][3];
+	const int thread_id = threadIdx.x;
+	const int lane_id = threadIdx.x % WARP_SIZE;
+	const int warp_id = threadIdx.x / WARP_SIZE;
+	while(__any_sync(r_end-r))
+	{
+		if(r_end-r)
+			comm[warp_id][0] = lane_id;
+		__syncwarp();
+		if(comm[warp_id][0] == thread_id)
+		{
+			comm[warp_id][1] = r;
+			comm[warp_id][2] = r_end;
+			r = r_end;
+		}
+		__syncwarp();
+		int r_gather = comm[warp_id][1] + lane_id;
+		const int r_gather_end = comm[warp_id][2];
+		int warp_progress = 0;
+		const int total = comm[2] - comm[1];
+		while(r_gather < r_gather_end)
+		{
+
+		}
+		while((total - block_progress) > 0)
+		{
+			int neighbor = -1;
+			bool is_valid = false;
+			if (r_gather < r_gather_end)
+			{
+				neighbor = column_index[r_gather];
+				// Look up status
+				is_valid = status_lookup(distance, neighbor);
+				if(is_valid)
+				{
+					// Update label
+					distance[neighbor] = iteration + 1;
+				}
+			}
+			// Prefix sum
+			const int2 queue_offset = block_prefix_sum(is_valid?1:0);
+			volatile __shared__ int base_offset[1];
+			// Obtain base enqueue offset
+			if(threadIdx.x == 0)
+				base_offset[0] = atomicAdd(out_queue_count,queue_offset.y);
+			__syncwarp();
+			// Write to queue
+			if (is_valid)
+				out_queue[base_offset[0]+queue_offset.x] = neighbor;
 
 
-r_gather += WARP_SIZE;
-block_progress+= WARP_SIZE;
-__syncwarp();
+			r_gather += WARP_SIZE;
+			block_progress+= WARP_SIZE;
+			__syncwarp();
+		}
+	}
 }
-}
-}
- */
+*/
 
 
 __device__ void fine_grained_gather(const int* const column_index, int* const distance,cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
@@ -298,7 +303,6 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
 	while ((remain = total - cta_progress) > 0)
 	{
 		// Pack shared array with neighbors from adjacency lists
-		// Notice that only threads with adjacency lists longer than BLOCK_SIZE will enter this loop more than once
 		while((rsv_rank < cta_progress + BLOCK_SIZE) && (r < r_end))
 		{
 			comm[rsv_rank - cta_progress] = r;
@@ -341,7 +345,7 @@ __device__ void fine_grained_gather(const int* const column_index, int* const di
 	}
 }
 
-__global__ void expand_contract_bfs(const int n, const int* row_offset, const int* column_index, int* distance, const int iteration,const int* in_queue,const int* in_queue_count, int* out_queue, int* out_queue_count, cudaSurfaceObject_t bitmask_surf)
+__global__ void expand_contract_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration,const int* const in_queue,const int* const in_queue_count, int* const out_queue, int* const out_queue_count, cudaSurfaceObject_t bitmask_surf)
 {
 	const int tid = blockIdx.x*blockDim.x + threadIdx.x;
 	//if(tid >= *in_queue_count) return; // you can't do this
@@ -375,6 +379,82 @@ __global__ void expand_contract_bfs(const int n, const int* row_offset, const in
 	__syncthreads();
 	end = count < BLOCK_SIZE ? r_end: r;
 	fine_grained_gather(column_index, distance,bitmask_surf, iteration, out_queue, out_queue_count, r,end);
+
+}
+
+__device__ void fine_grained_gather(const int* const column_index, int* const distance, int* const out_queue, int* const out_queue_count, int r, int r_end, int rsv_rank, const int total, const int base_offset)
+{
+
+	volatile __shared__ int comm[BLOCK_SIZE];
+	int cta_progress = 0;
+	int remain;
+	while ((remain = total - cta_progress) > 0)
+	{
+		// Pack shared array with neighbors from adjacency lists
+		while((rsv_rank < cta_progress + BLOCK_SIZE) && (r < r_end))
+		{
+			comm[rsv_rank - cta_progress] = r;
+			rsv_rank++;
+			r++;
+		}
+		__syncthreads();
+		if (threadIdx.x < remain) // && threadIdx.x < BLOCK_SIZE)
+		{
+			//printf("+");
+			const int neighbor = column_index[comm[threadIdx.x]];
+			const int queue_index = base_offset+cta_progress + threadIdx.x;
+			// Write to queue
+			//printf("%d,",queue_index);
+			out_queue[queue_index] = neighbor;
+		}
+		cta_progress += BLOCK_SIZE;
+		__syncthreads();
+	}
+}
+
+__global__ void contract_expand_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int* const in_queue_count, int* const out_queue, int* const out_queue_count)
+{
+	const int tid = blockIdx.x*blockDim.x + threadIdx.x;
+	const int queue_count = *in_queue_count;
+	const int v = tid < queue_count? in_queue[tid]:-1;
+	//printf("%d,",v);
+	bool is_valid = false;
+	if(tid < queue_count)
+	{
+		//printf("%d,",v);
+		is_valid = distance[v] == bfs::infinity;
+	}
+	int r = 0, r_end = 0;
+	if(is_valid)
+	{
+		//printf("%d,",v);
+		distance[v] = iteration + 1;
+		r = row_offset[v];
+		r_end = row_offset[v+1];
+		//int base = atomicAdd(out_queue_count,r_end-r);
+		//for(int i = r; i < r_end; i++)
+		//	out_queue[base+i-r] = column_index[i];
+	}
+
+	int2 prescan_result = block_prefix_sum(r_end - r);
+	//printf("%d:%d:%d,  ",tid,prescan_result.x,r_end-r);
+	
+	//printf("%d:%d:%d\n",tid,prescan_result.x,r_end-r);
+	//printf("rsv:%d",prescan_result.x);
+	volatile __shared__ int base_offset[1];
+	if(tid == 0)
+		base_offset[0] = atomicAdd(out_queue_count, prescan_result.y);
+	__syncthreads();
+	if(is_valid)
+		for(int i = r; i < r_end; i++)
+		{
+			out_queue[base_offset[0]+prescan_result.x+i-r] = column_index[i];
+		}
+	/*
+	fine_grained_gather(column_index, distance, out_queue, out_queue_count, r, r_end, prescan_result.x, prescan_result.y, base_offset[0]);
+	if(tid == 0)
+	printf("base:%d total:%d\n",base_offset[0],prescan_result.y);
+	*/
 
 }
 

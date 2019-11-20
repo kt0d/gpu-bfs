@@ -98,6 +98,30 @@ void initialize_vertex_queue(const int n, const int starting_vertex, int*& d_in_
 
 }
 
+void initialize_edge_queue(const int m, int*& d_queue, int*& queue_count)
+{
+	// Allocate device memory
+	checkCudaErrors(cudaMalloc((void**)&d_queue, m * sizeof(int)));
+
+	// Allocate counters as unified memory
+	checkCudaErrors(cudaMallocManaged((void**)&queue_count,sizeof(int)));
+	*queue_count = 0;
+}
+
+void initialize_edge_queue(const int m, int*& d_queue, int*& queue_count, const int * const d_column_index, const int r, const int r_end)
+{
+	initialize_edge_queue(m, d_queue, queue_count);
+	checkCudaErrors(cudaMemcpy(d_queue, d_column_index + r, (r_end-r) * sizeof(int), cudaMemcpyDeviceToDevice));
+	*queue_count = r_end - r;
+}
+
+void dispose_edge_queue(int*& d_queue, int*& queue_count)
+{
+	// Free unified memory
+	checkCudaErrors(cudaFree(queue_count));
+	// Free device memory
+	checkCudaErrors(cudaFree(d_queue));
+}
 void dispose_vertex_queue(int*& d_in_queue, int*& in_queue_count, int*& d_out_queue, int*& out_queue_count)
 {
 	// Free unified memory
@@ -359,3 +383,85 @@ bfs::result run_expand_contract_bfs(csr::matrix graph, int starting_vertex)
 	result.total_time = miliseconds;
 	return result;
 }
+
+bfs::result run_contract_expand_bfs(csr::matrix graph, int starting_vertex)
+{
+	// Allocate device memory for graph and copy it
+	int *d_row_offset, *d_column_index;
+	initialize_graph(graph,d_row_offset,d_column_index);
+
+	// Allocate and initialize distance vector
+	int *d_distance;
+	initialize_distance_vector(graph.n, starting_vertex, d_distance);
+
+	// Allocate and initialize queues and queue counters
+	int *in_queue_count, *out_queue_count;
+	int *d_in_queue, *d_out_queue;
+	initialize_edge_queue(graph.nnz, d_in_queue, in_queue_count, d_column_index, graph.ptr[starting_vertex], graph.ptr[starting_vertex+1]);
+	initialize_edge_queue(graph.nnz, d_out_queue, out_queue_count);
+
+	// Create events for time measurement
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	// Start time measurement
+	cudaEventRecord(start);
+	cudaEventSynchronize(start);
+	cudaProfilerStart();
+		checkCudaErrors(cudaDeviceSynchronize());
+	// Algorithm
+
+	int iteration = 0;
+	while(*in_queue_count > 0)
+	{
+		// Empty out queue
+		*out_queue_count = 0;
+
+		// Calculate number of blocks
+		const int num_of_blocks = div_up(*in_queue_count,BLOCK_SIZE);
+
+		std::cout << "=====================" << std::endl;
+//		std::cout <<"in: " << *in_queue_count << std::endl;
+		// Run kernel
+		contract_expand_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n, d_row_offset, d_column_index, d_distance, iteration, d_in_queue, in_queue_count, d_out_queue, out_queue_count);
+		checkCudaErrors(cudaDeviceSynchronize());
+		//std::cout << "out: " << *out_queue_count << std::endl;
+
+		iteration++;
+		// Swap queues
+		std::swap(d_in_queue,d_out_queue);
+		std::swap(in_queue_count,out_queue_count);
+
+	}
+	cudaProfilerStop();
+
+	// Calculate elapsed time
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float miliseconds = 0;
+	cudaEventElapsedTime(&miliseconds, start, stop);
+
+	// Event cleanup
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	// Copy distance vector to host memory
+	int *h_distance = new int[graph.n];
+	checkCudaErrors(cudaMemcpy(h_distance,d_distance,graph.n*sizeof(int),cudaMemcpyDeviceToHost));
+
+	// Free queue memory
+	dispose_edge_queue(d_in_queue, in_queue_count);
+	dispose_edge_queue(d_out_queue, out_queue_count);
+	// Free distance vector memory
+	dispose_distance_vector(d_distance); 
+	// Free graph memory
+	dispose_graph(d_row_offset, d_column_index);
+
+	// Fill result struct
+	bfs::result result;
+	result.distance= h_distance;
+	result.total_time = miliseconds;
+	return result;
+}
+
