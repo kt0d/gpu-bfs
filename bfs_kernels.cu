@@ -423,8 +423,10 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 		//printf("%d,",v);
 		is_valid = distance[v] == bfs::infinity;
 	}
+	volatile __shared__ int scratch[WARPS][HASH_RANGE];
 	int r = 0, r_end = 0;
-	if(is_valid)
+	bool is_duplicate = warp_cull(scratch, v);
+	if(is_valid && !is_duplicate)
 	{
 		//printf("%d,",v);
 		distance[v] = iteration + 1;

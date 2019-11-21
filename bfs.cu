@@ -411,7 +411,6 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int starting_vertex)
 	cudaProfilerStart();
 	checkCudaErrors(cudaDeviceSynchronize());
 	// Algorithm
-    std::cout << "start" << std::endl;
 
 	int iteration = 0;
 	while(*in_queue_count > 0)
@@ -438,7 +437,6 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int starting_vertex)
 
 	}
 	cudaProfilerStop();
-    std::cout << "stop" << std::endl;
 
 	// Calculate elapsed time
 	cudaEventRecord(stop);
