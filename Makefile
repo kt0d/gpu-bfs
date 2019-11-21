@@ -3,7 +3,7 @@ BIN_NAME=bfs
 LDLIBS=
 TARGET=main
 DEBUG=
-CCFLAGS=-Wextra -Wall
+CCFLAGS=-Wextra -Wall -Wunused-parameter
 CUDA_COMPILER_OPTIONS=$(addprefix --compiler-options ,${CCFLAGS}) --std=c++11
 ALL_CCFLAGS=
 ALL_LDFLAGS=
