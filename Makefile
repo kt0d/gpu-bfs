@@ -35,7 +35,7 @@ csr_matrix.o: csr_matrix.cpp csr_matrix.h
 	${NVCC} ${DEBUG} ${CUDA_COMPILER_OPTIONS} ${GENCODE_FLAGS} -c $< -o $@
 
 ${TARGET}: ${OBJECTS}
-	${NVCC} $^ ${GENCODE_FLAGS} -o $@
+	${NVCC} $^ ${GENCODE_FLAGS} -Xptxas="-v" -o $@
 
 clean:
 	rm ${TARGET} *.o
