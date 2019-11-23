@@ -52,7 +52,7 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 	}
 }
 
-__device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
+ __device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
 {
 	const int hash = v & (HASH_RANGE-1);
 	const int warp_id = threadIdx.x / WARP_SIZE;
@@ -78,13 +78,13 @@ __device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
 	return false;
 }
 
-__device__ bool history_cull()
+ __device__ bool history_cull()
 {
 	//TODO
 	return false;
 }
 
-__device__ int2 block_prefix_sum(const int val)
+ __device__ int2 block_prefix_sum(const int val)
 {
 	// Heavily inspired/copied from sample "shfl_scan" provied by NVIDIA
 	// Block-wide prefix sum using shfl intrinsic.
@@ -144,7 +144,7 @@ __device__ int2 block_prefix_sum(const int val)
 	return result; 
 }
 
-__device__ bool status_lookup(int * const distance,const cudaSurfaceObject_t bitmask_surf, const int neighbor)
+ __device__ bool status_lookup(int * const distance,const cudaSurfaceObject_t bitmask_surf, const int neighbor)
 {
 	// Just check status directly if bitmask is unavailable.
 	if (bitmask_surf == 0)
@@ -172,7 +172,7 @@ __device__ bool status_lookup(int * const distance,const cudaSurfaceObject_t bit
 	return not_visited;
 }
 
-__device__ void block_gather(const int* const column_index, int* const distance, cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
+ __device__ void block_gather(const int* const column_index, int* const distance, cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
 {
 	volatile __shared__ int comm[3];
 	while(__syncthreads_or(r < r_end))
@@ -228,7 +228,7 @@ __device__ void block_gather(const int* const column_index, int* const distance,
 	}
 }
 
-__device__ void fine_gather(const int* const column_index, int* const distance,cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
+ __device__ void fine_gather(const int* const column_index, int* const distance,cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
 {
 	const int2 ranks = block_prefix_sum(r_end-r);
 
@@ -237,9 +237,8 @@ __device__ void fine_gather(const int* const column_index, int* const distance,c
 
 	__shared__ int comm[BLOCK_SIZE];
 	int cta_progress = 0;
-	int remain;
 
-	while ((remain = total - cta_progress) > 0)
+	while ((total - cta_progress) > 0)
 	{
 		// Pack shared array with neighbors from adjacency lists.
 		while((rsv_rank < cta_progress + BLOCK_SIZE) && (r < r_end))
@@ -251,7 +250,7 @@ __device__ void fine_gather(const int* const column_index, int* const distance,c
 		__syncthreads();
 		int neighbor;
 		bool is_valid = false;
-		if (threadIdx.x < remain)
+		if (threadIdx.x < (total - cta_progress))
 		{
 			neighbor = column_index[comm[threadIdx.x]];
 			// Look up status
@@ -307,7 +306,7 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 
 }
 
-__device__ void fine_gather(const int* const column_index, int* const out_queue, int r, int r_end, int rsv_rank, const int total, const int base_offset)
+ __device__ void fine_gather(const int* const column_index, int* const out_queue, int r, int r_end, int rsv_rank, const int total, const int base_offset)
 {
 	volatile __shared__ int comm[BLOCK_SIZE];
 	int cta_progress = 0;
@@ -334,7 +333,7 @@ __device__ void fine_gather(const int* const column_index, int* const out_queue,
 	}
 }
 
-__device__ void warp_gather(const int* const column_index, int * const out_queue,int r, const int r_end, int rsv_rank, int base_offset)
+ __device__ void warp_gather(const int* const column_index, int * const out_queue,int r, const int r_end, int rsv_rank, int base_offset)
 {
 	volatile __shared__ int comm[WARPS][3];
 	const int lane_id = threadIdx.x % WARP_SIZE;

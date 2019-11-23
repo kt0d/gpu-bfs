@@ -102,17 +102,42 @@ void initialize_vertex_queue(const int n, const int starting_vertex, int*& d_in_
 	*out_queue_count=0;
 }
 
-void initialize_vertex_queue(const int n, int*& d_queue, int*& queue_count, const int starting_vertex)
+void initialize_vertex_queue(const int n, int*& d_queue, int*& d_queue_count, int*& h_queue_count)
 {
-
+	// Allocate device memory.
+	checkCudaErrors(cudaMalloc((void**)&d_queue,n * sizeof(int)));
+	// Allocate pinned memory.
+	checkCudaErrors(cudaHostAlloc((void**)&h_queue_count,sizeof(int),cudaHostAllocMapped));
+	checkCudaErrors(cudaHostGetDevicePointer((void**)&d_queue_count,(void*)h_queue_count,0));
+	// Set queue count to correct value.
+	*h_queue_count = 0;
 }
-void initialize_vertex_queue(const int n, int*& d_queue, int*& queue_count)
+void initialize_vertex_queue(const int n, int*& d_queue, int*& d_queue_count, int*& h_queue_count, const int starting_vertex)
 {
-
+	initialize_vertex_queue(n, d_queue, d_queue_count, h_queue_count);
+	// Insert starting vertex into the queue.
+	checkCudaErrors(cudaMemcpy(d_queue, &starting_vertex, sizeof(int), cudaMemcpyHostToDevice));
+	// Set queue count to correct value.
+	*h_queue_count = 1;
 }
-void dispose_vertex_queue(int*& d_queue, int*& queue_count)
+void dispose_vertex_queue(int*& d_queue, int*& /*d_queue_count*/, int*& h_queue_count)
 {
+	// Parameter d_queue_count is unused, but belongs on parameter list because it corresponds to parameter list of initialize_vertex_queue().
 
+	// Free device memory.
+	checkCudaErrors(cudaFree(d_queue));
+	// Free pinned memory.
+	checkCudaErrors(cudaFreeHost(h_queue_count));
+}
+void dispose_vertex_queue(int*& d_in_queue, int*& in_queue_count, int*& d_out_queue, int*& out_queue_count)
+{
+	// Free unified memory.
+	checkCudaErrors(cudaFree(in_queue_count));
+	checkCudaErrors(cudaFree(out_queue_count));
+
+	// Free device memory.
+	checkCudaErrors(cudaFree(d_in_queue));
+	checkCudaErrors(cudaFree(d_out_queue));
 }
 
 void initialize_edge_queue(const int m, int*& d_queue, int*& queue_count)
@@ -148,16 +173,6 @@ void dispose_edge_queue(int*& d_queue, int*& queue_count)
 
 	// Free device memory.
 	checkCudaErrors(cudaFree(d_queue));
-}
-void dispose_vertex_queue(int*& d_in_queue, int*& in_queue_count, int*& d_out_queue, int*& out_queue_count)
-{
-	// Free unified memory.
-	checkCudaErrors(cudaFree(in_queue_count));
-	checkCudaErrors(cudaFree(out_queue_count));
-
-	// Free device memory.
-	checkCudaErrors(cudaFree(d_in_queue));
-	checkCudaErrors(cudaFree(d_out_queue));
 }
 
 void initialize_bitmask(const int n,cudaSurfaceObject_t& bitmask_surf, int starting_vertex)
@@ -205,9 +220,11 @@ bfs::result run_linear_bfs(const csr::matrix graph, int starting_vertex)
 	initialize_distance_vector(graph.n, starting_vertex, d_distance);
 
 	// Initialize in queue and out queue.
-	int *in_queue_count, *out_queue_count;
+	int *d_in_queue_count, *d_out_queue_count,
+	    *h_in_queue_count, *h_out_queue_count;
 	int *d_in_queue, *d_out_queue;
-	initialize_vertex_queue(graph.n, starting_vertex, d_in_queue, in_queue_count,  d_out_queue, out_queue_count); 
+	initialize_vertex_queue(graph.n, d_in_queue, d_in_queue_count, h_in_queue_count, starting_vertex);
+	initialize_vertex_queue(graph.n, d_out_queue, d_out_queue_count, h_out_queue_count);
 
 	// Create events for time measurement.
 	cudaEvent_t start, stop;
@@ -221,22 +238,23 @@ bfs::result run_linear_bfs(const csr::matrix graph, int starting_vertex)
 	cudaProfilerStart();
 	// Algorithm
 	int iteration = 0;
-	while(*in_queue_count > 0)
+	while(*h_in_queue_count > 0)
 	{
 		// Empty out queue.
-		*out_queue_count = 0;
+		*h_out_queue_count = 0;
 
 		// Calculate number of blocks needed so every vertex in queue gets one thread.
-		const int num_of_blocks = div_up(*in_queue_count,BLOCK_SIZE);
+		const int num_of_blocks = div_up(*h_in_queue_count,BLOCK_SIZE);
 
 		// Run kernel.
-		linear_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue,in_queue_count, d_out_queue, out_queue_count);
+		linear_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue,d_in_queue_count, d_out_queue, d_out_queue_count);
 		checkCudaErrors(cudaDeviceSynchronize());
 
 		iteration++;
 		// Swap in and out queue. 
 		std::swap(d_in_queue,d_out_queue);
-		std::swap(in_queue_count,out_queue_count);
+		std::swap(d_in_queue_count,d_out_queue_count);
+		std::swap(h_in_queue_count,h_out_queue_count);
 	}
 	// Stop profiling.
 	cudaProfilerStop();
@@ -256,7 +274,8 @@ bfs::result run_linear_bfs(const csr::matrix graph, int starting_vertex)
 	checkCudaErrors(cudaMemcpy(h_distance,d_distance,graph.n*sizeof(int),cudaMemcpyDeviceToHost));
 
 	// Free queue memory.
-	dispose_vertex_queue(d_in_queue, in_queue_count, d_out_queue, out_queue_count);
+	dispose_vertex_queue(d_in_queue, d_in_queue_count, h_in_queue_count);
+	dispose_vertex_queue(d_out_queue, d_out_queue_count, h_out_queue_count);
 	// Free distance vector memory.
 	dispose_distance_vector(d_distance); 
 	// Free graph memory.
