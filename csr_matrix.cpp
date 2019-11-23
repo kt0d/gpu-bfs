@@ -12,13 +12,13 @@ csr::matrix csr::expand_symmetric_matrix(const csr::matrix mat)
 	expanded.n=n;
 	expanded.ptr = new int[expanded.n+1];
 
-	// Intialize column pointers array with zeros
+	// Intialize column pointers array with zeros.
 	for(int i = 0; i <= n; i++)
 	{
 		expanded.ptr[i] = 0;
 	}
 
-	// Count number of non-zero entries in upper triangular part, excluding main diagonal
+	// Count number of non-zero entries in the upper triangular part, excluding main diagonal.
 	for(int i = 0; i < n; i++)
 	{
 		for(int offset = mat.ptr[i]; offset < mat.ptr[i+1]; offset++)
@@ -29,7 +29,7 @@ csr::matrix csr::expand_symmetric_matrix(const csr::matrix mat)
 		}
 	}
 
-	// Calculate inclusive prefix sum
+	// Calculate inclusive prefix sum.
 	for(int i = 0; i < n; i++)
 		expanded.ptr[i+1]+=expanded.ptr[i];
 
@@ -37,10 +37,10 @@ csr::matrix csr::expand_symmetric_matrix(const csr::matrix mat)
 	expanded.nnz=expanded.ptr[n]+mat.nnz;
 	expanded.index = new int[expanded.nnz];
 
-	// Add exlusive prefix sum of counts of non-zero numbers in lower triangular part, including main diagonal
+	// Add exlusive prefix sum of counts of non-zero numbers in lower triangular part, including main diagonal.
 	for(int i = 0; i <= n; i++)
 		expanded.ptr[i]+=mat.ptr[i];
-	// Now expanded.ptr[i] points to place in column range where row indices from lower triangular matrix should be inserted to keep them in ascending order.
+	// Now expanded.ptr[i] points to a place in column range where row indices from lower triangular matrix should be inserted to keep all row indices for given 
 
 
 	// Insert row indices from lower triangular part 
@@ -53,7 +53,7 @@ csr::matrix csr::expand_symmetric_matrix(const csr::matrix mat)
 		}
 	}
 
-	// Insert row indices from upper triangular part, excluding main diagonal. Loop is from (n-1) to 0 to keep row indices in column ranges in ascending order.
+	// Insert row indices from upper triangular part, excluding main diagonal. Loop is from (n-1) to 0 to keep row indices in column ranges for given column in ascending order.
 	for(int i = n-1; i >= 0; i--)
 	{
 		for(int offset = mat.ptr[i]; offset < mat.ptr[i+1]; offset++)
@@ -67,12 +67,10 @@ csr::matrix csr::expand_symmetric_matrix(const csr::matrix mat)
 		}
 	}
 	return expanded;
-
 }
 
-// Only for Rutherford-Boeing Format for sparse matrices
-// Only square, pattern matrices
-// Rutherford-Boeing format uses compressed sparse column format
+// Accepts only square, pattern matrices in RutherFord-Boeing Format for sparse matrices.
+// Rutherford-Boeing format uses compressed sparse column format.
 csr::matrix csr::load_matrix(std::istream& input)
 {
 	csr::matrix mat;
@@ -99,7 +97,7 @@ csr::matrix csr::load_matrix(std::istream& input)
 	input.ignore(inf,'\n');
 	// line 4
 	input.ignore(inf,'\n');
-	// Filling structure with data
+	// Fil matrix struct with loaded size data and allocate arrays.
 	mat.n=n;
 	mat.nnz=entries;
 	mat.ptr = new int[n+1];
@@ -128,7 +126,7 @@ csr::matrix csr::load_matrix(std::istream& input)
 	return mat;
 }
 
-// Comments refer to compressed sparse row format
+// Comments refer to compressed sparse row format.
 csr::matrix csr::transpose_matrix(const csr::matrix mat)
 {
 	csr::matrix trans;
@@ -137,11 +135,11 @@ csr::matrix csr::transpose_matrix(const csr::matrix mat)
 	trans.ptr=new int[mat.n+1];
 	trans.index = new int[mat.nnz];
 
-	// Intialize column pointers array with zeros
+	// Intialize column pointers array with zeros.
 	for(int i = 0; i < trans.n+1; i++)
 		trans.ptr[i]=0;
 
-	// Count number of non-zero elements in every row of transposed matrix
+	// Count number of non-zero elements in every row of transposed matrix.
 	for(int i = 0; i < mat.n; i++)
 	{
 		for(int j = mat.ptr[i]; j < mat.ptr[i+1]; j++)
@@ -151,7 +149,7 @@ csr::matrix csr::transpose_matrix(const csr::matrix mat)
 	// Calculate inclusive prefix sum to obtain row ranges.
 	for(int i = 0; i < trans.n; i++)
 		trans.ptr[i+1]+=trans.ptr[i];
-	// trans.ptr[i] now points to where range of (i+1)-th row starts
+	// trans.ptr[i] now points to where range of (i+1)-th row starts.
 
 	// Insert column indices in transposed matrix. Loop is from (n-1) to 0 to keep indices in ascending order.
 	for(int i = mat.n-1; i >= 0; i--)
@@ -175,46 +173,52 @@ void csr::dispose_matrix(csr::matrix& mat)
 }
 
 
-void csr::print_matrix(const csr::matrix mat, std::ostream& output)
+void csr::print_matrix(const csr::matrix mat, std::ostream& output, bool print_compressed = false, bool print_full = false)
 {
-	// Print size information
+	// Print size information.
 	output << "Matrix of size " << mat.n << " with " << mat.nnz << " non-zero entries" << std::endl;
 
-	// Print matrix compressed sparse row/column format
-	output << "Compressed format:" << std::endl;
-	for(int i=0;i<mat.n+1;i++)
+	if(print_compressed)
 	{
-		output << mat.ptr[i] << ' ';
-	}
-	output << std::endl;
-	for(int i=0;i<mat.n;i++)
-	{
-		for(int j = mat.ptr[i]; j < mat.ptr[i+1];j++)
-			output << mat.index[j] << ' ';
-		output << std::endl;
-	}
-
-	// Print matrix in full form
-	output << "Expanded:" << std::endl;
-	for(int i=0; i < mat.n; i++)
-	{
-		int k = mat.ptr[i];
-		for(int j=0; j < mat.n; j++)
+		// Print matrix in compressed sparse row/column format.
+		output << "Compressed format:" << std::endl;
+		for(int i=0;i<mat.n+1;i++)
 		{
-			if(k < mat.ptr[i+1])
-			{
-				if(mat.index[k]<j)
-					k++;
-				if(mat.index[k]==j)
-					output << 1;
-				else
-					output << '_';
-			}
-			else
-				output << '_';
-			output << ' ';
+			output << mat.ptr[i] << ' ';
 		}
 		output << std::endl;
+		for(int i=0;i<mat.n;i++)
+		{
+			for(int j = mat.ptr[i]; j < mat.ptr[i+1];j++)
+				output << mat.index[j] << ' ';
+			output << std::endl;
+		}
+	}
+
+	if(print_full)
+	{
+		// Print matrix in full form.
+		output << "Expanded:" << std::endl;
+		for(int i=0; i < mat.n; i++)
+		{
+			int k = mat.ptr[i];
+			for(int j=0; j < mat.n; j++)
+			{
+				if(k < mat.ptr[i+1])
+				{
+					if(mat.index[k]<j)
+						k++;
+					if(mat.index[k]==j)
+						output << 1;
+					else
+						output << '_';
+				}
+				else
+					output << '_';
+				output << ' ';
+			}
+			output << std::endl;
+		}
 	}
 }
 

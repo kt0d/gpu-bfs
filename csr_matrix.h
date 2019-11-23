@@ -3,8 +3,8 @@
 
 namespace csr
 {
-	// Compressed sparse, square, pattern matrix - can represent both compressed sparse column or compressed sparse row format
-	// BFS functions assume it's compressed sparse row format
+	// Compressed sparse, square, pattern matrix - can represent both compressed sparse column or compressed sparse row format.
+	// BFS functions assume compressed sparse row format.
 	struct matrix
 	{
 		int n; // matrix dimension
@@ -13,11 +13,10 @@ namespace csr
 		int* index; // array of length nnz of indices
 	};
 
-	// forward delcarations of functions
 	matrix load_matrix(std::istream& input);
 	matrix transpose_matrix(const matrix mat);
 	matrix expand_symmetric_matrix(matrix mat);
 	void dispose_matrix(matrix& mat);
-	void print_matrix(const matrix mat, std::ostream& output = std::cout);
+	void print_matrix(const matrix mat, std::ostream& output = std::cout, bool print_compressed = false, bool print_full = false);
 
 }

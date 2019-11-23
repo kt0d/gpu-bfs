@@ -1,7 +1,6 @@
 NVCC=nvcc
-BIN_NAME=bfs
 LDLIBS=
-TARGET=main
+TARGET=bfs-gpu
 DEBUG=
 CCFLAGS=-Wextra -Wall -Wunused-parameter
 CUDA_COMPILER_OPTIONS=$(addprefix --compiler-options ,${CCFLAGS}) --std=c++11
@@ -10,7 +9,7 @@ ALL_LDFLAGS=
 GENCODE_FLAGS=--gpu-architecture=compute_35
 INCLUDES=-I/usr/local/cuda/samples/common/inc
 
-.PHONY: all clean
+.PHONY: all clean debug
 
 all: main
 
