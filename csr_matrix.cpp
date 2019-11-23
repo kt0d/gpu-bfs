@@ -172,8 +172,7 @@ void csr::dispose_matrix(csr::matrix& mat)
 	mat.n=mat.nnz=0;
 }
 
-
-void csr::print_matrix(const csr::matrix mat, std::ostream& output, bool print_compressed = false, bool print_full = false)
+void csr::print_matrix(const csr::matrix mat, std::ostream& output, const bool print_compressed, const bool print_full)
 {
 	// Print size information.
 	output << "Matrix of size " << mat.n << " with " << mat.nnz << " non-zero entries" << std::endl;

@@ -17,6 +17,7 @@ void usage(char *pname)
 		<< "-l Run linear-work BFS with blocking queue" << std::endl
 		<< "-q Run quadratic-work BFS" << std::endl
 		<< "-e Run expand-contract BFS" << std::endl
+		<< "-E Run contract-expand BFS" << std::endl
 		<< "-c Run CPU BFS and compare results for corectness" << std::endl
 		<< "FILENAME must be square pattern matrix stored in Rutherford Boeing sparse matrix format (*.rb)" << std::endl;
 	exit(EXIT_FAILURE);

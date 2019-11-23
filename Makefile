@@ -1,6 +1,6 @@
 NVCC=nvcc
 LDLIBS=
-TARGET=bfs-gpu
+TARGET=gpu-bfs
 DEBUG=
 CCFLAGS=-Wextra -Wall -Wunused-parameter
 CUDA_COMPILER_OPTIONS=$(addprefix --compiler-options ,${CCFLAGS}) --std=c++11
@@ -11,7 +11,7 @@ INCLUDES=-I/usr/local/cuda/samples/common/inc
 
 .PHONY: all clean debug
 
-all: main
+all: ${TARGET}
 
 debug: DEBUG+=-g -G
 debug: main

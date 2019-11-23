@@ -5,7 +5,7 @@
 # Object files
 *.o
 
-main
+gpu-bfs
 errors
 metrics
 events
