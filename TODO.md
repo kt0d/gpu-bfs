@@ -5,11 +5,11 @@
    - [ ] profiler…
    - [ ] zmierzyć metryki jak Merill et al.
 1. main:
-   - [ ] argumenty - skorzystać z argp.h, być może
-   - [ ] opcja wielokrotnego odpalenia z losowego wierzchołka
+   - [ ] argumenty - skorzystać z argp.h, być może; chyba jednak tego nie zrobię
+   - [x] opcja wielokrotnego odpalenia z losowego wierzchołka
 1. bfs:
-   - [ ] initialize\_vertex\_queue - rozbić na wzór initialize\_edge\_queue
-   - [ ] in\_queue\_count, out\_queue\_count - przerobić na memcpy albo chociaż pinned memory
+   - [x] initialize\_vertex\_queue - rozbić na wzór initialize\_edge\_queue
+   - [x] in\_queue\_count, out\_queue\_count - przerobić na memcpy albo chociaż pinned memory; po przerobieniu na mapped pinned memory potężnie zwolniło, mogę jeszcze spróbwać memcpy ale na razie nie chcę
 1. kernele: 
    - [ ] fix block\_gather
    - [ ] by oszczędzić na rejestrach możnaw warp\_cull i status\_lookup zamiast bool zwracać albo prawidłowy vertex albo -1, pozbyć się remain

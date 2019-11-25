@@ -6,7 +6,6 @@
 
 constexpr unsigned int FULL_MASK = 0xffffffff;
 
-
 __global__ void quadratic_bfs(const int n, const int* row_offset, const int* column_index, int*const distance, const int iteration, bool*const done)
 {
 	// Calculate corresponding vertex.
