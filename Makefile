@@ -22,7 +22,7 @@ bfs_cpu.o: bfs_cpu.cpp csr_matrix.h common.h bfs_cpu.h
 	${NVCC} ${INCLUDES} ${DEBUG} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@
 
 bfs_kernels.o: bfs_kernels.cu bfs_kernels.cuh
-	${NVCC} -G ${INCLUDES} ${DEBUG} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@
+	${NVCC} ${INCLUDES} ${DEBUG} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@
 
 bfs.o: bfs.cu bfs.cuh common.h bfs_kernels.cuh
 	${NVCC} ${INCLUDES} ${DEBUG} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@

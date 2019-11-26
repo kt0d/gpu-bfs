@@ -48,6 +48,8 @@ int compare_distance(const int* dist1,const int* dist2,const int n)
 		std::cout << ";NOT OK: " << diff << " OF " << n << " WITH " << small << " SMALLER AND " << inf << " NOT REACHED";
 	else
 		std::cout << ";OK";
+	if(inf)
+		std::cout << "NOT TRAVERSED";
 	return diff;
 }
 

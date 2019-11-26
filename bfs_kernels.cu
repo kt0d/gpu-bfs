@@ -56,30 +56,25 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 	}
 }
 
- __device__ bool warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
+ __device__ int warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
 {
+	unsigned int active = __ballot_sync(FULL_MASK, v >= 0);
+	if( v == -1) return v;
 	const int hash = v & (HASH_RANGE-1);
 	const int warp_id = threadIdx.x / WARP_SIZE;
-
-	// Threads without valid vertex provide -1 as v. They must enter this function, because they are needed for __syncwarp. Alternative: calculate mask of threads with correct vertices and use it in __syncwarp.
-	if (v != -1)
-		scratch[warp_id][hash]= v;
-	__syncwarp();
+	scratch[warp_id][hash]= v;
+	__syncwarp(active);
 	const int retrieved = scratch[warp_id][hash];
+	active = __ballot_sync(FULL_MASK, retrieved == v);
 	if (retrieved == v)
 	{
 		// Vie to be the only thread in warp inspecting vertex v.
 		scratch[warp_id][hash] = threadIdx.x;
+		__syncwarp(active);
+		if(scratch[warp_id][hash] != threadIdx.x)
+			return -1;
 	}
-	__syncwarp();
-	if(v == -1)
-		return true;
-	if (retrieved == v && scratch[warp_id][hash] != threadIdx.x)
-	{
-		// Some other thread has this vertex.
-		return true;
-	}
-	return false;
+	return v;
 }
 
  __device__ bool history_cull()
@@ -108,7 +103,7 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 	}
 
 	// Write warp total to shared array.
-	if (threadIdx.x % WARP_SIZE == WARP_SIZE- 1)
+	if (lane_id == WARP_SIZE- 1)
 	{
 		sums[warp_id] = value;
 	}
@@ -294,15 +289,15 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 
 	// Get vertex from the queue.
-	const int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
+	int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
 
 	// Do local warp-culling.
 	volatile __shared__ int scratch[WARPS][HASH_RANGE];
-	const bool is_duplicate = warp_cull(scratch, v);
+	v = warp_cull(scratch, v);
 
 	// Load corresponding row-ranges.
-	const int r = is_duplicate?0:row_offset[v];
-	const int r_end = is_duplicate?0:row_offset[v+1];
+	const int r =  v < 0 ?0:row_offset[v];
+	const int r_end = v < 0?0:row_offset[v+1];
 	const bool big_list = (r_end - r) >= BLOCK_SIZE;
 
 	// Both expand and contract phases occur in these functions.
@@ -379,17 +374,20 @@ __global__ void contract_expand_bfs(const int m, const int* const row_offset, co
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 
 	// Get neighbor from the queue.
-	const int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
+	int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
 
 	// Contract phase: filter previously visited and duplicate neighbors.
-	const bool is_valid = v != -1 ? (distance[v] == bfs::infinity) : false;
 	volatile __shared__ int scratch[WARPS][HASH_RANGE];
-	const bool is_duplicate = warp_cull(scratch, v);
+	v = warp_cull(scratch, v);
+	if(v >= 0 &&  distance[v] == bfs::infinity){
+		distance[v] = iteration+1;
+	}
+	else
+		v = -1;
 	int r = 0, r_end = 0;
-	//if(is_valid && !is_duplicate)
+
 	if(v >= 0)
 	{
-		distance[v] = iteration + 1;
 		r = row_offset[v];
 		r_end = row_offset[v+1];
 	}
