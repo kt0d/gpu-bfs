@@ -56,14 +56,12 @@ int compare_distance(const int* dist1,const int* dist2,const int n)
 void print_result(const bfs::result result, const char* method)
 {
 
-//	std::cout << method << " with time " << std::fixed << std::setprecision(10) << result.total_time << std::endl;
-	//std::cout << method << ";" << 
 }
 
 int main(int argc, char **argv)
 {
 	// Process options
-	bool run_linear = false, run_quadratic = false, compare = false, print_info = false, print_matrix = false, run_expand_contract = false, run_contract_expand = false;
+	bool  compare = false, print_info = false, print_matrix = false;
 	bool set_source = false;
 	std::list<std::pair<const char*, std::function<bfs::result(csr::matrix, int)>>> kernels_to_run; 
 
@@ -75,11 +73,9 @@ int main(int argc, char **argv)
 		{
 			case 'L':
 				kernels_to_run.push_back(std::make_pair("Linear",run_linear_bfs));
-				run_linear = true;
 				break;
 			case 'Q':
 				kernels_to_run.push_back(std::make_pair("Quadratic", run_quadratic_bfs));
-				run_quadratic = true;
 				break;
 			case 'c':
 				compare = true;
@@ -92,11 +88,9 @@ int main(int argc, char **argv)
 				break;
 			case 'E':
 				kernels_to_run.push_back(std::make_pair("Expand-contract", run_expand_contract_bfs));
-				run_expand_contract = true;
 				break;
 			case 'C':
 				kernels_to_run.push_back(std::make_pair("Contract-expand", run_contract_expand_bfs));
-				run_contract_expand = true;
 				break;
 			case 'n':
 				times = atoi(optarg);
@@ -125,6 +119,7 @@ int main(int argc, char **argv)
 	csr::matrix graph= csr::load_matrix(rb_file);
 	rb_file.close();
 	
+	// If source vertex was chosen explicitly, check if it's correct
 	if(set_source && (set_source_vertex < 0 || set_source_vertex >= graph.n))
 	{
 		std::cerr << "Vertex " << set_source_vertex << " does not belong to loaded graph" << std::endl;
@@ -132,27 +127,34 @@ int main(int argc, char **argv)
 	}
 
 	graph_name = basename(argv[optind]);
-
 	if(print_info)
 		std::cout << "Graph with " << graph.n << " vertices and " << graph.nnz << " edges" << std::endl;
-
 	if(print_matrix)
 		csr::print_matrix(graph,std::cout);
 
 	std::random_device generator;
 	std::uniform_int_distribution<int> distribution(0,graph.n);
 
+	const char sep = ';';
+	auto print_csv = [=] (const char* name, int n, int m, int s, const char* k, float t)
+	{
+		std::cout << name << sep << n << sep << m << sep << s << sep << k << sep << t;
+	};
 	// Run kernels
+	// CSV header
 	std::cout << "graph;vertices;edges;source;kernel;time" <<  (compare?";correctness":"") << std::endl;
 	for(int i = 0; i < times; i++)
 	{
 		const int source = set_source ? set_source_vertex : distribution(generator);
-		print_adjacency_list(graph,source);
+
 		bfs::result cpu_result;
 		if(compare)
 		{
 			cpu_result = cpu_bfs(graph,source);
-			std::cout << graph_name << ";" << graph.n << ";" << graph.nnz << ";" << source << ";CPU;" << cpu_result.total_time << (compare?";OK":"") << std::endl;
+			print_csv( graph_name, graph.n,graph.nnz, source,"CPU" ,cpu_result.total_time);
+			if(compare)
+				std::cout << ";OK";
+			std::cout << std::endl;
 		}
 
 		for (auto& it: kernels_to_run)
@@ -160,7 +162,8 @@ int main(int argc, char **argv)
 			auto bfs_func = it.second;
 			bfs::result result = bfs_func(graph,source);
 
-			std::cout << graph_name << ";" << graph.n << ";" << graph.nnz << ";" << source << ";" <<  it.first << ";" << result.total_time;
+			// Print result in CSV format
+			print_csv(graph_name, graph.n, graph.nnz, source, it.first, result.total_time);
 			if(compare)
 				compare_distance(cpu_result.distance, result.distance,graph.n);
 			std::cout << std::endl;
@@ -172,61 +175,6 @@ int main(int argc, char **argv)
 			delete[] cpu_result.distance;
 
 	}
-
-	/*
-	bfs::result cpu_result, linear_result, quadratic_result, expand_contract_result, contract_expand_result;
-	if(compare)
-	{
-		cpu_result = cpu_bfs(mat);
-		print_result(cpu_result,"CPU");
-	}
-	if(run_linear)
-	{
-		linear_result = run_linear_bfs(mat,0);
-		print_result(linear_result,"Linear");
-		if(compare)
-		{
-			compare_distance(cpu_result.distance,linear_result.distance,mat.n);
-		}
-	}
-	if(run_quadratic)
-	{
-		quadratic_result = run_quadratic_bfs(mat);
-		print_result(quadratic_result,"Quadratic");
-		if(compare)
-		{
-			compare_distance(cpu_result.distance,quadratic_result.distance,mat.n);
-		}
-	}
-	if(run_expand_contract)
-	{
-		expand_contract_result = run_expand_contract_bfs(mat);
-		print_result(expand_contract_result,"Expand-contract");
-		if(compare)
-		{
-			compare_distance(cpu_result.distance,expand_contract_result.distance,mat.n);
-		}
-	}
-	if(run_contract_expand)
-	{
-		contract_expand_result = run_contract_expand_bfs(mat);
-		print_result(contract_expand_result,"Contract-expand");
-		if(compare)
-			compare_distance(cpu_result.distance, contract_expand_result.distance, mat.n);
-	}
-
-	// Clean up after yourself
-	if(run_contract_expand)
-		delete[] contract_expand_result.distance;
-	if(run_expand_contract)
-		delete[] expand_contract_result.distance;
-	if(run_quadratic)
-		delete[] quadratic_result.distance;
-	if(run_linear)
-		delete[] linear_result.distance;
-	if(compare)
-		delete[] cpu_result.distance;
-	*/
 
 	csr::dispose_matrix(graph);
 	return EXIT_SUCCESS;

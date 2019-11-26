@@ -1,7 +1,6 @@
-IMPORTANT
-w contract expand jest bug objawiający się dla grafu kron_g500-logn20 ze źródla 668976. wydaje się że przyczyną może być źle działająca unified memory, a konkretnie w run_contract_expand out_queue_count chociaż zerowanie nie przenosi się do GPU
-ZATEM muszę użyć cudamemcpy jak człowiek
-
+do zapamiętania
+- kompiacja z symbolami odpluskwiania (-G) powoduje dramatyczne zwolenienie
+- kron jest MULTIGRAFEM
 1. projekt:
    - [x] dodać komentarze - wszędzie
    - [ ] pozbyć się bezużytecznych komentarzy
@@ -10,14 +9,17 @@ ZATEM muszę użyć cudamemcpy jak człowiek
    - [ ] profiler…
    - [ ] zmierzyć metryki jak Merill et al.
 1. main:
-   - [x] argumenty - skorzystać z argp.h, być może; chyba jednak tego nie zrobię
+   - [ ] rozbić na funkcje
    - [x] opcja wielokrotnego odpalenia z losowego wierzchołka
    - [ ] wiele grafów
+1. csr\_matrix
+   - [ ] dodać obsługę mutligrafów
+   - [ ] w ogóle przerobić na csr\_graph czy coś
 1. bfs:
-   - [ ] wielekrotne uruchomienie kernela, ale bez dealokacji
    - [x] initialize\_vertex\_queue - rozbić na wzór initialize\_edge\_queue
    - [x] in\_queue\_count, out\_queue\_count - przerobić na memcpy albo chociaż pinned memory; po przerobieniu na mapped pinned memory potężnie zwolniło, mogę jeszcze spróbwać memcpy ale na razie nie chcę; jest memcpy i jest ok
 1. kernele: 
+   - [ ] tile of input
    - [ ] fix block\_gather
    - [ ] by oszczędzić na rejestrach możnaw warp\_cull i status\_lookup zamiast bool zwracać albo prawidłowy vertex albo -1, pozbyć się remain
    - [ ] zmniejszyć użycie rejestrów: możne je zbadać kompilując z opcją -dc i otwierając plik obiektowy przez 'cuobjdump -elf'
