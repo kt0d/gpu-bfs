@@ -66,7 +66,8 @@ int main(int argc, char **argv)
 
 	char c;
 	int times = 1;
-	while ((c = getopt(argc, argv, "cpmLQECTn:")) != -1)
+	int set_source = -1;
+	while ((c = getopt(argc, argv, "cpmLQECTn:s:")) != -1)
 		switch(c)
 		{
 			case 'L':
@@ -96,6 +97,9 @@ int main(int argc, char **argv)
 				break;
 			case 'n':
 				times = atoi(optarg);
+				break;
+			case 's':
+				set_source = atoi(optarg);
 				break;
 
 			default:
@@ -129,7 +133,7 @@ int main(int argc, char **argv)
 	std::cout << "graph;vertices;edges;source;kernel;time" <<  (compare?";correctness":"") << std::endl;
 	for(int i = 0; i < times; i++)
 	{
-		const int source = distribution(generator);
+		const int source = set_source >= 0 ? set_source : distribution(generator);
 		bfs::result cpu_result;
 		if(compare)
 		{

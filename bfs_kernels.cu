@@ -324,6 +324,8 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 		{
 			const int neighbor = column_index[comm[threadIdx.x]];
 			const int queue_index = base_offset+cta_progress + threadIdx.x;
+			if(queue_index >= 89239674)
+				printf("ehh");
 			// Write to queue.
 			out_queue[queue_index] = neighbor;
 		}
@@ -334,7 +336,7 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 
  __device__ void warp_gather(const int* const column_index, int * const out_queue,int r, const int r_end, int rsv_rank, int base_offset)
 {
-	volatile __shared__ int comm[WARPS][3];
+	volatile __shared__ int comm[WARPS][4];
 	const int lane_id = threadIdx.x % WARP_SIZE;
 	const int warp_id = threadIdx.x / WARP_SIZE;
 	while(__any_sync(FULL_MASK,r < r_end))
@@ -343,21 +345,23 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 		if(r < r_end)
 			comm[warp_id][0] = lane_id;
 		__syncwarp();
-		if(comm[warp_id][0] == lane_id)
+		if(r < r_end && comm[warp_id][0] == lane_id)
 		{
 			// If won, share your range and enqueue offset to the entire warp.
 			__syncwarp();
-			comm[warp_id][0] = rsv_rank;
 			comm[warp_id][1] = r;
 			comm[warp_id][2] = r_end;
+			comm[warp_id][3] = rsv_rank;
 			r = r_end;
 		}
 		__syncwarp();
 		int r_gather = comm[warp_id][1] + lane_id;
 		const int r_gather_end = comm[warp_id][2];
-		int queue_index = base_offset+comm[warp_id][0] + lane_id;
+		int queue_index = base_offset+comm[warp_id][3] + lane_id;
 		while(r_gather < r_gather_end)
 		{
+			if(queue_index >= 89239674)
+				printf("przyp");
 			const int v = column_index[r_gather];
 			out_queue[queue_index] = v;
 			r_gather += WARP_SIZE;
@@ -368,6 +372,8 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 
 __global__ void contract_expand_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int* const in_queue_count, int* const out_queue, int* const out_queue_count)
 {
+	if(threadIdx.x == 0 && *out_queue_count == 0)
+		printf("(%d, %d) ", blockIdx.x, *out_queue_count);
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 	const int queue_count = *in_queue_count;
 
@@ -379,7 +385,8 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	volatile __shared__ int scratch[WARPS][HASH_RANGE];
 	const bool is_duplicate = warp_cull(scratch, v);
 	int r = 0, r_end = 0;
-	if(is_valid && !is_duplicate)
+	//if(is_valid && !is_duplicate)
+	if(v >= 0 && distance[v] == bfs::infinity)
 	{
 		distance[v] = iteration + 1;
 		r = row_offset[v];
@@ -387,7 +394,7 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	}
 
 	// Expand phase: expand adjacency lists and copy them to the out queue.
-	const bool big_list = (r_end - r) >= WARP_SIZE; 
+	const bool big_list =(r_end - r) >= WARP_SIZE; 
 	const int2 warp_gather_prescan = block_prefix_sum(big_list ? (r_end - r):0);
 	__syncthreads(); // __syncthreads is very much needed because of shared array used in block_prefix_sum
 	const int2 fine_gather_prescan = block_prefix_sum(big_list ? 0 : (r_end - r));
@@ -395,6 +402,9 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	volatile __shared__ int base_offset[1];
 	if(threadIdx.x == 0)
 		base_offset[0] = atomicAdd(out_queue_count, warp_gather_prescan.y + fine_gather_prescan.y);
+	if(threadIdx.x == 0)
+		if(warp_gather_prescan.y + fine_gather_prescan.y >= 89239674)
+			printf("problem");
 	__syncthreads();
 	int base = base_offset[0];	
 	warp_gather(column_index, out_queue, r, big_list ? r_end : 0, warp_gather_prescan.x, base);

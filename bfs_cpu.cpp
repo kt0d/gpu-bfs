@@ -6,7 +6,7 @@
 #include <queue>
 #include <chrono>
 
-bfs::result cpu_bfs(const csr::matrix mat, const int starting_vertex)
+bfs::result cpu_bfs(const csr::matrix mat, const int source_vertex)
 {
 	// Allocate distance vector.
 	int* const dist = new int[mat.n];
@@ -19,9 +19,9 @@ bfs::result cpu_bfs(const csr::matrix mat, const int starting_vertex)
 	// Fill distance vector.
 	for(int i = 0; i < mat.n; i++)
 		dist[i]=bfs::infinity;
-	dist[starting_vertex]=0;
+	dist[source_vertex]=0;
 
-	q.push(starting_vertex);
+	q.push(source_vertex);
 	while(!q.empty())
 	{
 		const int vertex = q.front();
