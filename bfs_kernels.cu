@@ -1,6 +1,7 @@
 #include "bfs_kernels.cuh"
 
 #include "common.h"
+#include <assert.h>
 
 #include <stdio.h>
 
@@ -30,12 +31,12 @@ __global__ void quadratic_bfs(const int n, const int* row_offset, const int* col
 		*done=local_done;
 }
 
-__global__ void linear_bfs(const int n, const int* row_offset, const int*const column_index, int*const distance, const int iteration,const int*const in_queue,const int*const in_queue_count, int*const out_queue, int*const out_queue_count)
+__global__ void linear_bfs(const int n, const int* row_offset, const int*const column_index, int*const distance, const int iteration,const int*const in_queue,const int in_queue_count, int*const out_queue, int*const out_queue_count)
 {
 	// Calculate index of corresponding vertex in the queue.
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 	// Don't go out of bounds.
-	if(global_tid >= *in_queue_count) return;
+	if(global_tid >= in_queue_count) return;
 	// Get vertex from the queue.
 	const int v = in_queue[global_tid];
 	for(int offset = row_offset[v]; offset < row_offset[v+1]; offset++)
@@ -282,13 +283,12 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 	}
 }
 
-__global__ void expand_contract_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration,const int* const in_queue,const int* const in_queue_count, int* const out_queue, int* const out_queue_count, cudaSurfaceObject_t bitmask_surf)
+__global__ void expand_contract_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration,const int* const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count, cudaSurfaceObject_t bitmask_surf)
 {
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
-	const int queue_count = *in_queue_count;
 
 	// Get vertex from the queue.
-	const int v = global_tid < queue_count? in_queue[global_tid]:-1;
+	const int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
 
 	// Do local warp-culling.
 	volatile __shared__ int scratch[WARPS][HASH_RANGE];
@@ -370,15 +370,14 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 	}
 }
 
-__global__ void contract_expand_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int* const in_queue_count, int* const out_queue, int* const out_queue_count)
+__global__ void contract_expand_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count)
 {
-	if(threadIdx.x == 0 && *out_queue_count == 0)
-		printf("(%d, %d) ", blockIdx.x, *out_queue_count);
+	//if(threadIdx.x == 0 && *out_queue_count == 0)
+	//	printf("(%d, %d) ", blockIdx.x, *out_queue_count);
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
-	const int queue_count = *in_queue_count;
 
 	// Get neighbor from the queue.
-	const int v = global_tid < queue_count? in_queue[global_tid]:-1;
+	const int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
 
 	// Contract phase: filter previously visited and duplicate neighbors.
 	const bool is_valid = v != -1 ? (distance[v] == bfs::infinity) : false;
@@ -394,7 +393,7 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	}
 
 	// Expand phase: expand adjacency lists and copy them to the out queue.
-	const bool big_list =(r_end - r) >= WARP_SIZE; 
+	const bool big_list = false;//(r_end - r) >= WARP_SIZE; 
 	const int2 warp_gather_prescan = block_prefix_sum(big_list ? (r_end - r):0);
 	__syncthreads(); // __syncthreads is very much needed because of shared array used in block_prefix_sum
 	const int2 fine_gather_prescan = block_prefix_sum(big_list ? 0 : (r_end - r));
