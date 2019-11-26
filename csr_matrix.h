@@ -18,5 +18,6 @@ namespace csr
 	matrix expand_symmetric_matrix(matrix mat);
 	void dispose_matrix(matrix& mat);
 	void print_matrix(const matrix mat, std::ostream& output = std::cout, bool print_compressed = false, bool print_full = false);
+	void print_adjacency_list(const matrix mat, int v, std::ostream& output = std::cout);
 
 }

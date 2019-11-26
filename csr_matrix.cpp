@@ -221,3 +221,14 @@ void csr::print_matrix(const csr::matrix mat, std::ostream& output, const bool p
 	}
 }
 
+void csr::print_adjacency_list(const csr::matrix mat, int v, std::ostream& output)
+{
+	double count;
+	for(int i = 0; i < mat.n; i++)
+		count += mat.ptr[i+1]-mat.ptr[i];
+	count /= mat.n;
+	std::cout << "avg degree " << count << std::endl;
+	for(int j = mat.ptr[v]; j < mat.ptr[v+1];j++)
+		output << mat.index[j] << ' ';
+	output << std::endl;
+}

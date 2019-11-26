@@ -62,11 +62,12 @@ int main(int argc, char **argv)
 {
 	// Process options
 	bool run_linear = false, run_quadratic = false, compare = false, print_info = false, print_matrix = false, run_expand_contract = false, run_contract_expand = false;
+	bool set_source = false;
 	std::list<std::pair<const char*, std::function<bfs::result(csr::matrix, int)>>> kernels_to_run; 
 
 	char c;
 	int times = 1;
-	int set_source = -1;
+	int set_source_vertex;
 	while ((c = getopt(argc, argv, "cpmLQECTn:s:")) != -1)
 		switch(c)
 		{
@@ -99,7 +100,8 @@ int main(int argc, char **argv)
 				times = atoi(optarg);
 				break;
 			case 's':
-				set_source = atoi(optarg);
+				set_source = true;
+				set_source_vertex = atoi(optarg);
 				break;
 
 			default:
@@ -114,9 +116,18 @@ int main(int argc, char **argv)
 	std::ifstream rb_file;
 	rb_file.open(graph_name);
 	if(!rb_file.good())
+	{
+		std::cerr << "Incorrect file" << std::endl;
 		usage(argv[0]);
+	}
 	csr::matrix graph= csr::load_matrix(rb_file);
 	rb_file.close();
+	
+	if(set_source && (set_source_vertex < 0 || set_source_vertex >= graph.n))
+	{
+		std::cerr << "Vertex " << set_source_vertex << " does not belong to loaded graph" << std::endl;
+		usage(argv[0]);
+	}
 
 	graph_name = basename(argv[optind]);
 
@@ -133,7 +144,8 @@ int main(int argc, char **argv)
 	std::cout << "graph;vertices;edges;source;kernel;time" <<  (compare?";correctness":"") << std::endl;
 	for(int i = 0; i < times; i++)
 	{
-		const int source = set_source >= 0 ? set_source : distribution(generator);
+		const int source = set_source ? set_source_vertex : distribution(generator);
+		print_adjacency_list(graph,source);
 		bfs::result cpu_result;
 		if(compare)
 		{
@@ -155,7 +167,7 @@ int main(int argc, char **argv)
 		}
 
 		if(compare)
-			delete [] cpu_result.distance;
+			delete[] cpu_result.distance;
 
 	}
 

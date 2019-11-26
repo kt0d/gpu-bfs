@@ -18,7 +18,9 @@ __global__ void quadratic_bfs(const int n, const int* row_offset, const int* col
 	if(distance[global_tid] != iteration) return;
 
 	bool local_done=true;
-	for(int offset = row_offset[global_tid]; offset < row_offset[global_tid+1]; offset++)
+	const int r = row_offset[global_tid];
+	const int r_end = row_offset[global_tid+1];
+	for(int offset = r; offset < r_end; offset++)
 	{
 		const int j = column_index[offset];
 		if(distance[j] > iteration+1)
@@ -39,7 +41,9 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 	if(global_tid >= in_queue_count) return;
 	// Get vertex from the queue.
 	const int v = in_queue[global_tid];
-	for(int offset = row_offset[v]; offset < row_offset[v+1]; offset++)
+	const int r = row_offset[v];
+	const int r_end = row_offset[v+1];
+	for(int offset = r; offset < r_end; offset++)
 	{
 		const int j = column_index[offset];
 		if(distance[j] == bfs::infinity)
@@ -147,10 +151,11 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
  __device__ bool status_lookup(int * const distance,const cudaSurfaceObject_t bitmask_surf, const int neighbor)
 {
 	// Just check status directly if bitmask is unavailable.
-	if (bitmask_surf == 0)
+	//if (bitmask_surf == 0)
 		return distance[neighbor] == bfs::infinity;
-	bool not_visited = false;
-
+	
+	//bool not_visited = false;
+	/*
 	const unsigned int neighbor_mask = (1 << (neighbor % (8 * sizeof(unsigned int))));
 	unsigned int mask = 0;
 	const int count = neighbor / (8 * sizeof(unsigned int));
@@ -170,6 +175,7 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 	}
 
 	return not_visited;
+	*/
 }
 
  __device__ void block_gather(const int* const column_index, int* const distance, cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
@@ -324,8 +330,6 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 		{
 			const int neighbor = column_index[comm[threadIdx.x]];
 			const int queue_index = base_offset+cta_progress + threadIdx.x;
-			if(queue_index >= 89239674)
-				printf("ehh");
 			// Write to queue.
 			out_queue[queue_index] = neighbor;
 		}
@@ -345,7 +349,7 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 		if(r < r_end)
 			comm[warp_id][0] = lane_id;
 		__syncwarp();
-		if(r < r_end && comm[warp_id][0] == lane_id)
+		if(comm[warp_id][0] == lane_id)
 		{
 			// If won, share your range and enqueue offset to the entire warp.
 			__syncwarp();
@@ -360,8 +364,6 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 		int queue_index = base_offset+comm[warp_id][3] + lane_id;
 		while(r_gather < r_gather_end)
 		{
-			if(queue_index >= 89239674)
-				printf("przyp");
 			const int v = column_index[r_gather];
 			out_queue[queue_index] = v;
 			r_gather += WARP_SIZE;
@@ -370,7 +372,7 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 	}
 }
 
-__global__ void contract_expand_bfs(const int n, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count)
+__global__ void contract_expand_bfs(const int m, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count)
 {
 	//if(threadIdx.x == 0 && *out_queue_count == 0)
 	//	printf("(%d, %d) ", blockIdx.x, *out_queue_count);
@@ -385,7 +387,7 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	const bool is_duplicate = warp_cull(scratch, v);
 	int r = 0, r_end = 0;
 	//if(is_valid && !is_duplicate)
-	if(v >= 0 && distance[v] == bfs::infinity)
+	if(v >= 0)
 	{
 		distance[v] = iteration + 1;
 		r = row_offset[v];
@@ -393,7 +395,7 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	}
 
 	// Expand phase: expand adjacency lists and copy them to the out queue.
-	const bool big_list = false;//(r_end - r) >= WARP_SIZE; 
+	const bool big_list = (r_end - r) >= WARP_SIZE; 
 	const int2 warp_gather_prescan = block_prefix_sum(big_list ? (r_end - r):0);
 	__syncthreads(); // __syncthreads is very much needed because of shared array used in block_prefix_sum
 	const int2 fine_gather_prescan = block_prefix_sum(big_list ? 0 : (r_end - r));
@@ -401,11 +403,9 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 	volatile __shared__ int base_offset[1];
 	if(threadIdx.x == 0)
 		base_offset[0] = atomicAdd(out_queue_count, warp_gather_prescan.y + fine_gather_prescan.y);
-	if(threadIdx.x == 0)
-		if(warp_gather_prescan.y + fine_gather_prescan.y >= 89239674)
-			printf("problem");
 	__syncthreads();
 	int base = base_offset[0];	
+	assert(threadIdx.x != 0 || ((base+warp_gather_prescan.y + fine_gather_prescan.y) < m));
 	warp_gather(column_index, out_queue, r, big_list ? r_end : 0, warp_gather_prescan.x, base);
 	base += warp_gather_prescan.y;
 	fine_gather(column_index, out_queue, r, big_list ? 0: r_end, fine_gather_prescan.x, fine_gather_prescan.y, base);
