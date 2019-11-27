@@ -98,7 +98,7 @@ void init_queue_with_vertex(const int n, int*& d_queue, int*& d_queue_count, int
 	checkCudaErrors(cudaMemcpy(d_queue, &source_vertex, sizeof(int), cudaMemcpyHostToDevice));
 	// Set queue count to correct value.
 	h_queue_count = 1;
-	checkCudaErrors(cudaMemcpy(d_queue_count, &h_queue_count, sizeof(int), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_queue_count, &h_queue_count, sizeof(int), cudaMemcpyHostToDevice)); // kinda useless tbh
 }
 
 // Initialize queue and copy adjacency list given by range (r, r_end) into it. Set host-side and device-side queue counters to correct value.
@@ -190,9 +190,9 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 		const int num_of_blocks = div_up(h_queue_count,BLOCK_SIZE);
 		// Run kernel.
 		linear_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue, h_queue_count,d_out_queue, d_queue_count);
-		checkCudaErrors(cudaDeviceSynchronize());
 		// Get queue count
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count,sizeof(int), cudaMemcpyDeviceToHost));
+		std::cout << h_queue_count << std::endl;
 
 		iteration++;
 		std::swap(d_in_queue,d_out_queue);
@@ -400,7 +400,7 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 
 //		std::cout << "======== iteration\t" << iteration << " with blocks\t" << num_of_blocks << "=============" << std::endl;
 //		std::cout <<"in: " << h_queue_count << std::endl;
-		contract_expand_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.nnz, d_row_offset, d_column_index, d_distance, iteration, d_in_queue, h_queue_count, d_out_queue, d_queue_count);
+		contract_expand_bfs<<<div_up(num_of_blocks,4),BLOCK_SIZE>>>(graph.nnz, d_row_offset, d_column_index, d_distance, iteration, d_in_queue, h_queue_count, d_out_queue, d_queue_count);
 
 		// Get queue count from device memory.
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count, sizeof(int), cudaMemcpyDeviceToHost));

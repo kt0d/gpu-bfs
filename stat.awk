@@ -49,5 +49,9 @@ END{
     for(kernel in hmean){
         hmean[kernel] /= max
         printf "\t%-23s %s\n", kernel, hmean[kernel]
+#	for(i = 0; i < hmean[kernel]*80; i+=3)
+#		printf("░▒█")
+#	printf("\n")
+
     }
 }

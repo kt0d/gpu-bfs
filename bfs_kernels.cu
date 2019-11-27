@@ -50,6 +50,7 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 			distance[j]=iteration+1;
 			// Enqueue vertex.
 			const int ind = atomicAdd(out_queue_count,1);
+			assert(ind < n);
 			out_queue[ind]=j;
 		}
 	}
@@ -367,12 +368,21 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 
 __global__ void contract_expand_bfs(const int m, const int* const row_offset, const int* const column_index, int* const distance, const int iteration, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count)
 {
-	//if(threadIdx.x == 0 && *out_queue_count == 0)
-	//	printf("(%d, %d) ", blockIdx.x, *out_queue_count);
-	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
+	int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
+	__shared__ int history[BLOCK_SIZE];
+	history[threadIdx.x] = -1;
 
+	while(__syncthreads_or(global_tid < in_queue_count))
+	{
 	// Get neighbor from the queue.
 	int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
+	const int hash = ((BLOCK_SIZE) - 1) & v;
+	if(history[hash] == v)
+	{
+		v = -1;
+	}
+	else
+		history[hash] = v;
 
 	// Contract phase: filter previously visited and duplicate neighbors.
 	volatile __shared__ int scratch[WARPS][HASH_RANGE];
@@ -406,5 +416,8 @@ __global__ void contract_expand_bfs(const int m, const int* const row_offset, co
 	base += warp_gather_prescan.y;
 	fine_gather(column_index, out_queue, r, big_list ? 0: r_end, fine_gather_prescan.x, fine_gather_prescan.y, base);
 
+
+	global_tid += gridDim.x*blockDim.x;
+	}
 }
 
