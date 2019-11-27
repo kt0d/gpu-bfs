@@ -15,7 +15,9 @@ do zapamiętania
 1. csr\_matrix
    - [ ] dodać obsługę mutligrafów
    - [ ] w ogóle przerobić na csr\_graph czy coś
+   - [ ] wczytywać .graph z DIMACS 10th challenge? - ale .rb są popularniejsze
 1. bfs:
+   - [ ] zwracać liczbę iteracji w bfs result
    - [x] initialize\_vertex\_queue - rozbić na wzór initialize\_edge\_queue
    - [x] in\_queue\_count, out\_queue\_count - przerobić na memcpy albo chociaż pinned memory; po przerobieniu na mapped pinned memory potężnie zwolniło, mogę jeszcze spróbwać memcpy ale na razie nie chcę; jest memcpy i jest ok
 1. kernele: 

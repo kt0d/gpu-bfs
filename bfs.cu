@@ -9,27 +9,33 @@
 #include <cuda_profiler_api.h>
 #include <helper_cuda.h>
 
+/// HELPER FUNCTIONS
+
 int div_up(int dividend, int divisor)
 {
 	return (dividend % divisor == 0)?(dividend/divisor):(dividend/divisor+1);
 }
 
-__global__ void init_dist_kernel(const int n, int*const distance,const int start)
+/// KERNELS
+
+// Set every label in distance vecto to infinity, except source vertex.
+__global__ void init_dist_kernel(const int n, int*const distance,const int source_vertex)
 {
-	// Calculate corresponding vertex.
+	// Compute corresponding vertex.
 	const int id = blockIdx.x*blockDim.x + threadIdx.x;
 
 	// Fill distance vector with infinity.
 	if(id < n)
 		distance[id]=bfs::infinity;
-	// Set distance to starting vertex to 0.
-	if(id == start)
+	// Set distance to source_vertexing vertex to 0.
+	if(id == source_vertex)
 		distance[id]=0;
 }
 
-__global__ void init_bitmask(const int count, cudaSurfaceObject_t bitmask_surf, const int start)
+// Set every bit in bitmask to 0, except source vertex.
+__global__ void init_bitmask(const int count, cudaSurfaceObject_t bitmask_surf, const int source_vertex)
 {
-	// Calculate corresponding uint in bitmask.
+	// Compute index of corresponding uint in bitmask.
 	const int id = blockIdx.x*blockDim.x + threadIdx.x;
 
 	// Fill bitmask with zeros.
@@ -38,17 +44,19 @@ __global__ void init_bitmask(const int count, cudaSurfaceObject_t bitmask_surf, 
 		const unsigned int mask = 0;
 		surf1Dwrite(mask, bitmask_surf, id*4);
 	} 
-	// Set bit corresponding to starting vertex to 1.
-	if(id == (start / (8 * sizeof(unsigned int))))
+	// Set bit corresponding to source_vertexing vertex to 1.
+	if(id == (source_vertex / (8 * sizeof(unsigned int))))
 	{
-		const unsigned int mask = 1 << (start % (8 * sizeof(unsigned int)));
+		const unsigned int mask = 1 << (source_vertex % (8 * sizeof(unsigned int)));
 		surf1Dwrite(mask,bitmask_surf, id*4);
 	}
 }
 
+/// INITIALIZATIONS AND MEMORY RELEASE
+
+// Copy graph data to global device memory.
 void init_graph(csr::matrix graph, int*&d_row_offset, int*&d_column_index)
 {
-	// Allocate device memory.
 	checkCudaErrors(cudaMalloc((void**)&d_row_offset,(graph.n+1) * sizeof(int)));
 	checkCudaErrors(cudaMalloc((void**)&d_column_index,graph.nnz * sizeof(int)));
 
@@ -59,35 +67,29 @@ void init_graph(csr::matrix graph, int*&d_row_offset, int*&d_column_index)
 
 void dispose_graph(int*& d_row_offset, int*& d_column_index)
 {
-	// Free device memory.
 	checkCudaErrors(cudaFree(d_row_offset));
 	checkCudaErrors(cudaFree(d_column_index));
 }
 
 void init_dist_vector(const int n, const int source_vertex, int*& d_distance)
 {
-	// Allocate device memory.
 	checkCudaErrors(cudaMalloc((void**)&d_distance,n * sizeof(int)));
-
-	// Calculate number of blocks needed to fill distance vector.
+	// Compute number of blocks needed to fill distance vector.
 	const int num_of_blocks = div_up(n,BLOCK_SIZE);
-
-	// Run kernel.
 	init_dist_kernel<<<num_of_blocks,BLOCK_SIZE>>>(n, d_distance,source_vertex);
 }
 
 void dispose_distance_vector(int* d_distance)
 {
-	// Free device memory.
 	checkCudaErrors(cudaFree(d_distance));
 }
 
 void init_queue(const int n, int *& d_queue)
 {
-	// Allocate device memory.
 	checkCudaErrors(cudaMalloc((void**)&d_queue,n * sizeof(int)));
 }
 
+// Initialize queue and push source vertex into it. Set host-side and device-side queue counters to 1.
 void init_queue_with_vertex(const int n, int*& d_queue, int*& d_queue_count, int& h_queue_count,  const int source_vertex)
 {
 	init_queue(n, d_queue);
@@ -99,6 +101,7 @@ void init_queue_with_vertex(const int n, int*& d_queue, int*& d_queue_count, int
 	checkCudaErrors(cudaMemcpy(d_queue_count, &h_queue_count, sizeof(int), cudaMemcpyHostToDevice));
 }
 
+// Initialize queue and copy adjacency list given by range (r, r_end) into it. Set host-side and device-side queue counters to correct value.
 void init_queue_with_edges(const int m, int*& d_queue, int*& d_queue_count, int& h_queue_count,  const int * const d_column_index, const int r, const int r_end)
 {
 	// Initialize empty queue.
@@ -107,7 +110,6 @@ void init_queue_with_edges(const int m, int*& d_queue, int*& d_queue_count, int&
 	// Copy neighbors of starting vertex into the queue.
 	const int count = r_end - r;
 	checkCudaErrors(cudaMemcpy(d_queue, d_column_index + r, count * sizeof(int), cudaMemcpyDeviceToDevice));
-
 	// Set queue count to correct value.
 	h_queue_count = count;
 	checkCudaErrors(cudaMemcpy(d_queue_count, &h_queue_count, sizeof(int), cudaMemcpyHostToDevice));// not needed
@@ -115,7 +117,6 @@ void init_queue_with_edges(const int m, int*& d_queue, int*& d_queue_count, int&
 
 void dispose_queue(int* d_queue, int* d_queue_count= nullptr)
 {
-	// Free device memory.
 	checkCudaErrors(cudaFree(d_queue_count));
 	if(d_queue_count != nullptr)
 	checkCudaErrors(cudaFree(d_queue));
@@ -154,18 +155,17 @@ void dispose_bitmask(cudaSurfaceObject_t bitmask_surf)
 	 */
 }
 
+/// BFS FUNCTIONS
 
 bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 {
-	// Initialize graph in device memory.
+	// Initialize graph, queue and distance vector in device memory.
 	int *d_row_offset, *d_column_index;
 	init_graph(graph,d_row_offset,d_column_index);
 
-	// Initialize distance vector in device memory.
 	int *d_distance;
 	init_dist_vector(graph.n, source_vertex, d_distance);
 
-	// Initialize in queue and out queue.
 	int *d_queue_count, h_queue_count;
 	int *d_in_queue, *d_out_queue;
 	init_queue_with_vertex(graph.n, d_in_queue, d_queue_count, h_queue_count, source_vertex);
@@ -175,38 +175,32 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-
 	// Start time measurement.
 	cudaEventRecord(start);
-
 	// Start profiling.
 	cudaProfilerStart();
+
 	// Algorithm
 	int iteration = 0;
 	while(h_queue_count > 0)
 	{
 		// Empty queue.
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
-
-		// Calculate number of blocks needed so every vertex in queue gets one thread.
+		// Compute number of blocks needed so every vertex in queue gets one thread.
 		const int num_of_blocks = div_up(h_queue_count,BLOCK_SIZE);
-
 		// Run kernel.
 		linear_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue, h_queue_count,d_out_queue, d_queue_count);
 		checkCudaErrors(cudaDeviceSynchronize());
-
 		// Get queue count
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count,sizeof(int), cudaMemcpyDeviceToHost));
 
 		iteration++;
-
-		// Swap in and out queue. 
 		std::swap(d_in_queue,d_out_queue);
 	}
+
 	// Stop profiling.
 	cudaProfilerStop();
-
-	// Calculate elapsed time.
+	// Compute elapsed time.
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	float miliseconds = 0;
@@ -220,12 +214,10 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 	int *h_distance = new int[graph.n];
 	checkCudaErrors(cudaMemcpy(h_distance,d_distance,graph.n*sizeof(int),cudaMemcpyDeviceToHost));
 
-	// Free queue memory.
+	// Cleanup device memory.
 	dispose_queue(d_in_queue, d_queue_count);
 	dispose_queue(d_out_queue);
-	// Free distance vector memory.
 	dispose_distance_vector(d_distance); 
-	// Free graph memory.
 	dispose_graph(d_row_offset, d_column_index);
 
 	// Fill and return result struct.
@@ -237,42 +229,40 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 
 bfs::result run_quadratic_bfs(const csr::matrix graph, int source_vertex)
 {
-	// Initialize graph in device memory.
+	// Initialize graph, distance vector and finish flag in device memory.
 	int *d_row_offset, *d_column_index;
 	init_graph(graph,d_row_offset,d_column_index);
 
-	// Initialize distance vector in device memory.
 	int *d_distance;
 	init_dist_vector(graph.n, source_vertex, d_distance);
 
-	// Allocate and map bool flag, used in the algorithm
 	bool *d_done, h_done;
 	checkCudaErrors(cudaMalloc((void**)&d_done,sizeof(bool)));
 	checkCudaErrors(cudaDeviceSynchronize());
-	int iteration = 0;
 
 	// Create events for time measurement.
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-
 	// Start time measurement.
 	cudaEventRecord(start);
 
 	// Algorithm
-	// Calculate number of blocks needed so every vertex in graph gets one thread.
+	// Compute number of blocks needed so every vertex in graph gets one thread.
 	const int num_of_blocks = div_up(graph.n, BLOCK_SIZE);
+	int iteration = 0;
 	do
 	{
 		// Set flag to 'true' value.
 		checkCudaErrors(cudaMemset(d_done,1,sizeof(bool)));
 		// Run kernel.
 		quadratic_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_done);
+		// Copy flag from device memory.
 		checkCudaErrors(cudaMemcpy(&h_done, d_done, sizeof(bool), cudaMemcpyDeviceToHost));
 		iteration++;
 	} while(!h_done);
 
-	// Calculate elapsed time.
+	// Compute elapsed time.
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	float miliseconds = 0;
@@ -282,16 +272,13 @@ bfs::result run_quadratic_bfs(const csr::matrix graph, int source_vertex)
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
 
-
 	// Copy distance vector to host memory.
 	int *h_distance = new int[graph.n];
 	checkCudaErrors(cudaMemcpy(h_distance,d_distance,graph.n*sizeof(int),cudaMemcpyDeviceToHost));
 
-	// Free flag memory.
+	// Cleanup device memory.
 	checkCudaErrors(cudaFree(d_done));
-	// Free distance vector memory.
 	dispose_distance_vector(d_distance); 
-	// Free graph memory.
 	dispose_graph(d_row_offset, d_column_index);
 
 	// Fill and return result struct.
@@ -303,33 +290,28 @@ bfs::result run_quadratic_bfs(const csr::matrix graph, int source_vertex)
 
 bfs::result run_expand_contract_bfs(csr::matrix graph, int source_vertex)
 {
-	// Initialize graph in device memory.
+	// Initialize graph, distance vector, vertex queues and bitmask in device memory.
 	int *d_row_offset, *d_column_index;
 	init_graph(graph,d_row_offset,d_column_index);
 
-	// Initialize distance vector in device memory.
 	int *d_distance;
 	init_dist_vector(graph.n, source_vertex, d_distance);
 
-	// Initialize in queue and out queue.
 	int *d_queue_count, h_queue_count;
 	int *d_in_queue, *d_out_queue;
 	init_queue_with_vertex(graph.n, d_in_queue, d_queue_count, h_queue_count, source_vertex);
 	init_queue(graph.n, d_out_queue);
 
-	// Allocate and initialize status lookup bitmask. 
-	cudaSurfaceObject_t bitmask_surf = 0;
+	cudaSurfaceObject_t bitmask_surf;
 	initialize_bitmask(graph.n,bitmask_surf,source_vertex);
 
 	// Create events for time measurement.
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-
 	// Start time measurement.
 	cudaEventRecord(start);
 	cudaEventSynchronize(start);
-	
 	// Start profiling.
 	cudaProfilerStart();
 
@@ -339,31 +321,24 @@ bfs::result run_expand_contract_bfs(csr::matrix graph, int source_vertex)
 	{
 		// Empty queue.
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
-
-		// Calculate number of blocks needed so very vertex in queue gets one thread.
+		// Compute number of blocks needed so very vertex in queue gets one thread.
 		const int num_of_blocks = div_up(h_queue_count,BLOCK_SIZE);
 
-		// Run kernel
 		expand_contract_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue,h_queue_count, d_out_queue, d_queue_count,bitmask_surf);
-		// Get queue count
+		// Get queue count from device memory.
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count, sizeof(int), cudaMemcpyDeviceToHost));
-
-		iteration++;
-
-		// Swap in and out queue. 
 		std::swap(d_in_queue,d_out_queue);
-
+		iteration++;
 	}
 
 	// Stop profiling.
 	cudaProfilerStop();
 
-	// Calculate elapsed time.
+	// Compute elapsed time.
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	float miliseconds = 0;
 	cudaEventElapsedTime(&miliseconds, start, stop);
-
 	// Cleanup events. 
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
@@ -372,14 +347,11 @@ bfs::result run_expand_contract_bfs(csr::matrix graph, int source_vertex)
 	int *h_distance = new int[graph.n];
 	checkCudaErrors(cudaMemcpy(h_distance,d_distance,graph.n*sizeof(int),cudaMemcpyDeviceToHost));
 
-	// Free bitmask.
+	// Cleanup device memory.
 	dispose_bitmask(bitmask_surf);
-	// Free queue memory.
 	dispose_queue(d_in_queue, d_queue_count);
 	dispose_queue(d_out_queue);
-	// Free distance vector memory.
 	dispose_distance_vector(d_distance); 
-	// Free graph memory.
 	dispose_graph(d_row_offset, d_column_index);
 
 	// Fill and return result struct.
@@ -391,7 +363,7 @@ bfs::result run_expand_contract_bfs(csr::matrix graph, int source_vertex)
 
 bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 {
-	// Initialize graph in device memory.
+	// Initialize graph, distance vector and edge queues in device memory.
 	int *d_row_offset, *d_column_index;
 	init_graph(graph,d_row_offset,d_column_index);
 
@@ -415,7 +387,7 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 	cudaEventSynchronize(start);
 
 	// Start profiling.
-	//cudaProfilerStart();
+	cudaProfilerStart();
 
 	// Algorithm
 	int iteration = 0;
@@ -423,34 +395,28 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 	{
 		// Empty queue.
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
-		// Calculate number of blocks needed so every edge in queue gets one thread.
+		// Compute number of blocks needed so every edge in queue gets one thread.
 		const int num_of_blocks = div_up(h_queue_count,BLOCK_SIZE);
 
 //		std::cout << "======== iteration\t" << iteration << " with blocks\t" << num_of_blocks << "=============" << std::endl;
 //		std::cout <<"in: " << h_queue_count << std::endl;
-		// Run kernel
 		contract_expand_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.nnz, d_row_offset, d_column_index, d_distance, iteration, d_in_queue, h_queue_count, d_out_queue, d_queue_count);
 
-		// Get queue count
+		// Get queue count from device memory.
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count, sizeof(int), cudaMemcpyDeviceToHost));
-//		checkCudaErrors(cudaDeviceSynchronize());
 //		std::cout << "out: " << h_queue_count << std::endl;
-
-		iteration++;
-		// Swap in and out queue. 
 		std::swap(d_in_queue,d_out_queue);
-
+		iteration++;
 	}
 
 	// Stop profiling.
-	//cudaProfilerStop();
+	cudaProfilerStop();
 
-	// Calculate elapsed time.
+	// Compute elapsed time.
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	float miliseconds = 0;
 	cudaEventElapsedTime(&miliseconds, start, stop);
-
 	// Cleanup events.
 	cudaEventDestroy(start);
 	cudaEventDestroy(stop);
@@ -459,12 +425,10 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 	int *h_distance = new int[graph.n];
 	checkCudaErrors(cudaMemcpy(h_distance,d_distance,graph.n*sizeof(int),cudaMemcpyDeviceToHost));
 
-	// Free queue memory.
+	// Cleanup device memory.
 	dispose_queue(d_in_queue, d_queue_count);
 	dispose_queue(d_out_queue);
-	// Free distance vector memory.
 	dispose_distance_vector(d_distance); 
-	// Free graph memory.
 	dispose_graph(d_row_offset, d_column_index);
 
 	// Fill result struct.

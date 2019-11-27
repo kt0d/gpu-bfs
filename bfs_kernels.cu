@@ -9,10 +9,9 @@ constexpr unsigned int FULL_MASK = 0xffffffff;
 
 __global__ void quadratic_bfs(const int n, const int* row_offset, const int* column_index, int*const distance, const int iteration, bool*const done)
 {
-	// Calculate corresponding vertex.
+	// Compute corresponding vertex.
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 
-	// Don't go out of bounds.
 	if(global_tid >= n) return;
 	// Inspect only vertices in current frontier.
 	if(distance[global_tid] != iteration) return;
@@ -35,7 +34,7 @@ __global__ void quadratic_bfs(const int n, const int* row_offset, const int* col
 
 __global__ void linear_bfs(const int n, const int* row_offset, const int*const column_index, int*const distance, const int iteration,const int*const in_queue,const int in_queue_count, int*const out_queue, int*const out_queue_count)
 {
-	// Calculate index of corresponding vertex in the queue.
+	// Compute index of corresponding vertex in the queue.
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 	// Don't go out of bounds.
 	if(global_tid >= in_queue_count) return;
@@ -85,7 +84,7 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 
  __device__ int2 block_prefix_sum(const int val)
 {
-	// Heavily inspired/copied from sample "shfl_scan" provied by NVIDIA
+	// Heavily inspired/copied from sample "shfl_scan" provided by NVIDIA.
 	// Block-wide prefix sum using shfl intrinsic.
 	volatile __shared__ int sums[WARPS];
 	int value = val;
@@ -194,7 +193,6 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 		const int r_gather_end = comm[2];
 		const int total = comm[2] - comm[1];
 		int block_progress = 0;
-		// TODO simplify it
 		while((total - block_progress) > 0)
 		{
 			int neighbor = -1;

@@ -73,6 +73,7 @@ csr::matrix csr::expand_symmetric_matrix(const csr::matrix mat)
 // Rutherford-Boeing format uses compressed sparse column format.
 csr::matrix csr::load_matrix(std::istream& input)
 {
+	// See for format description: https://www.cise.ufl.edu/research/sparse/matrices/DOC/rb.pdf
 	csr::matrix mat;
 	bool is_symmetric=false;
 	std::streamsize inf = std::numeric_limits<std::streamsize>::max();

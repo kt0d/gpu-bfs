@@ -6,6 +6,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <sstream>
 
 #include <functional>
 #include <list>
@@ -29,33 +30,49 @@ void usage(char *pname)
 	exit(EXIT_FAILURE);
 }
 
-int compare_distance(const int* dist1,const int* dist2,const int n)
+struct comparison_result
 {
-	int diff = 0;
-	int small = 0;
-	int inf = 0;
+	int diff, small, inf;
+};
+
+comparison_result compare_distance(const int* dist1,const int* dist2,const int n)
+{
+	comparison_result ret = {0, 0, 0};
 
 	for(int i = 0; i < n; i++)
 	{
 		if(dist1[i] != dist2[i])
 		{
-			diff++;
-			if(dist1[i] > dist2[i]) small++;
-			if(dist2[i] == bfs::infinity) inf++;
+			ret.diff++;
+			if(dist1[i] > dist2[i]) ret.small++;
+			if(dist2[i] == bfs::infinity) ret.inf++;
 		}
 	}
-	if(diff)
-		std::cout << ";NOT OK: " << diff << " OF " << n << " WITH " << small << " SMALLER AND " << inf << " NOT REACHED";
-	else
-		std::cout << ";OK";
-	if(inf)
-		std::cout << "NOT TRAVERSED";
-	return diff;
+
+	return ret;
 }
 
-void print_result(const bfs::result result, const char* method)
+// Print result in CSV format
+void print_csv(const char* name, int n, int m, int s, const char* k, float t, const int* dist_cpu, const int* dist)
 {
-
+	const char sep = ';';
+	std::basic_ostringstream<char> output;
+	output << name << sep << n << sep << m << sep << s << sep << k << sep << t;
+	if(dist != nullptr)
+	{
+		output << ';';
+		comparison_result cmp = compare_distance(dist_cpu,dist,n);
+		if(cmp.diff == 0)
+			output << "OK";
+		else
+		{
+			output << "NOT OK " << cmp.diff << " DIFFERENT WITH " << cmp.small << " SMALLER";
+		}
+		if(cmp.inf > 0)
+			output << " " << cmp.inf << " NOT REACHED";
+	}
+	output << std::endl;
+	std::cout << output.str();
 }
 
 int main(int argc, char **argv)
@@ -118,11 +135,12 @@ int main(int argc, char **argv)
 	}
 	csr::matrix graph= csr::load_matrix(rb_file);
 	rb_file.close();
-	
+
 	// If source vertex was chosen explicitly, check if it's correct
 	if(set_source && (set_source_vertex < 0 || set_source_vertex >= graph.n))
 	{
 		std::cerr << "Vertex " << set_source_vertex << " does not belong to loaded graph" << std::endl;
+		csr::dispose_matrix(graph);
 		usage(argv[0]);
 	}
 
@@ -131,30 +149,30 @@ int main(int argc, char **argv)
 		std::cout << "Graph with " << graph.n << " vertices and " << graph.nnz << " edges" << std::endl;
 	if(print_matrix)
 		csr::print_matrix(graph,std::cout);
+	if(kernels_to_run.size() == 0)
+	{
+		csr::dispose_matrix(graph);
+		return EXIT_SUCCESS;
+	}
 
 	std::random_device generator;
 	std::uniform_int_distribution<int> distribution(0,graph.n);
 
-	const char sep = ';';
-	auto print_csv = [=] (const char* name, int n, int m, int s, const char* k, float t)
-	{
-		std::cout << name << sep << n << sep << m << sep << s << sep << k << sep << t;
-	};
+
+
 	// Run kernels
 	// CSV header
-	std::cout << "graph;vertices;edges;source;kernel;time" <<  (compare?";correctness":"") << std::endl;
+	std::cout << "graph;vertices;edges;source;kernel;time" <<  (compare?";correct":"") << std::endl;
 	for(int i = 0; i < times; i++)
 	{
 		const int source = set_source ? set_source_vertex : distribution(generator);
 
 		bfs::result cpu_result;
+		cpu_result.distance = nullptr;
 		if(compare)
 		{
 			cpu_result = cpu_bfs(graph,source);
-			print_csv( graph_name, graph.n,graph.nnz, source,"CPU" ,cpu_result.total_time);
-			if(compare)
-				std::cout << ";OK";
-			std::cout << std::endl;
+			print_csv(graph_name, graph.n, graph.nnz, source, "CPU", cpu_result.total_time,cpu_result.distance, cpu_result.distance);
 		}
 
 		for (auto& it: kernels_to_run)
@@ -162,13 +180,9 @@ int main(int argc, char **argv)
 			auto bfs_func = it.second;
 			bfs::result result = bfs_func(graph,source);
 
-			// Print result in CSV format
-			print_csv(graph_name, graph.n, graph.nnz, source, it.first, result.total_time);
-			if(compare)
-				compare_distance(cpu_result.distance, result.distance,graph.n);
-			std::cout << std::endl;
+			print_csv(graph_name, graph.n, graph.nnz, source, it.first, result.total_time,cpu_result.distance, result.distance);
 
-		delete[] result.distance;
+			delete[] result.distance;
 		}
 
 		if(compare)
