@@ -22,6 +22,7 @@ bfs::result cpu_bfs(const csr::matrix mat, const int source_vertex)
 	dist[source_vertex]=0;
 
 	q.push(source_vertex);
+    int depth = 0;
 	while(!q.empty())
 	{
 		const int vertex = q.front();
@@ -32,6 +33,7 @@ bfs::result cpu_bfs(const csr::matrix mat, const int source_vertex)
 			if(dist[neighbor] == bfs::infinity)
 			{
 				dist[neighbor] = dist[vertex] + 1;
+                depth=dist[vertex]+1;
 				q.push(neighbor);
 			}
 		}
@@ -47,5 +49,6 @@ bfs::result cpu_bfs(const csr::matrix mat, const int source_vertex)
 	bfs::result result;
 	result.total_time = diff.count();
 	result.distance = dist;
+    result.depth = depth;
 	return result;
 }

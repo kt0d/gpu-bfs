@@ -1,5 +1,5 @@
-#graph;vertices;edges;source;kernel;time
-#$1   ;$2      ;$3   ;$4    ;$5    ;$6
+#graph;vertices;edges;source;kernel;time;depth
+#$1   ;$2      ;$3   ;$4    ;$5    ;$6  ;$7
 
 function max_of(array){
     max = -1

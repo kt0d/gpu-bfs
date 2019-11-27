@@ -224,6 +224,7 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 	bfs::result result;
 	result.distance= h_distance;
 	result.total_time = miliseconds;
+    result.depth = iteration - 1;
 	return result;
 }
 
@@ -285,6 +286,7 @@ bfs::result run_quadratic_bfs(const csr::matrix graph, int source_vertex)
 	bfs::result result;
 	result.distance= h_distance;
 	result.total_time = miliseconds;
+    result.depth = iteration - 1;
 	return result;
 }
 
@@ -358,6 +360,7 @@ bfs::result run_expand_contract_bfs(csr::matrix graph, int source_vertex)
 	bfs::result result;
 	result.distance= h_distance;
 	result.total_time = miliseconds;
+    result.depth = iteration - 1;
 	return result;
 }
 
@@ -435,5 +438,6 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 	bfs::result result;
 	result.distance= h_distance;
 	result.total_time = miliseconds;
+    result.depth = iteration ? (iteration - 1) : 0;
 	return result;
 }

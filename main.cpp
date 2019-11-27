@@ -53,15 +53,16 @@ comparison_result compare_distance(const int* dist1,const int* dist2,const int n
 }
 
 // Print result in CSV format
-void print_csv(const char* name, int n, int m, int s, const char* k, float t, const int* dist_cpu, const int* dist)
+void print_csv(const char* name, int n, int m, int s, const char* k, const bfs::result result, const int* dist_cpu)
 {
+			//print_csv(graph_name, graph.n, graph.nnz, source, "CPU", cpu_result, cpu_result.distance);
 	const char sep = ';';
 	std::basic_ostringstream<char> output;
-	output << name << sep << n << sep << m << sep << s << sep << k << sep << t;
-	if(dist != nullptr)
+	output << name << sep << n << sep << m << sep << s << sep << k << sep << result.total_time << sep << result.depth;
+	if(dist_cpu != nullptr)
 	{
 		output << ';';
-		comparison_result cmp = compare_distance(dist_cpu,dist,n);
+		comparison_result cmp = compare_distance(dist_cpu,result.distance,n);
 		if(cmp.diff == 0)
 			output << "OK";
 		else
@@ -158,11 +159,12 @@ int main(int argc, char **argv)
 	std::random_device generator;
 	std::uniform_int_distribution<int> distribution(0,graph.n);
 
+    csr::print_adjacency_list(graph, set_source_vertex);
 
 
 	// Run kernels
 	// CSV header
-	std::cout << "graph;vertices;edges;source;kernel;time" <<  (compare?";correct":"") << std::endl;
+	std::cout << "graph;vertices;edges;source;kernel;time;depth" <<  (compare?";correct":"") << std::endl;
 	for(int i = 0; i < times; i++)
 	{
 		const int source = set_source ? set_source_vertex : distribution(generator);
@@ -172,7 +174,7 @@ int main(int argc, char **argv)
 		if(compare)
 		{
 			cpu_result = cpu_bfs(graph,source);
-			print_csv(graph_name, graph.n, graph.nnz, source, "CPU", cpu_result.total_time,cpu_result.distance, cpu_result.distance);
+			print_csv(graph_name, graph.n, graph.nnz, source, "CPU", cpu_result, cpu_result.distance);
 		}
 
 		for (auto& it: kernels_to_run)
@@ -180,7 +182,7 @@ int main(int argc, char **argv)
 			auto bfs_func = it.second;
 			bfs::result result = bfs_func(graph,source);
 
-			print_csv(graph_name, graph.n, graph.nnz, source, it.first, result.total_time,cpu_result.distance, result.distance);
+			print_csv(graph_name, graph.n, graph.nnz, source, it.first, result, cpu_result.distance);
 
 			delete[] result.distance;
 		}
