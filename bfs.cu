@@ -370,11 +370,9 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 	int *d_row_offset, *d_column_index;
 	init_graph(graph,d_row_offset,d_column_index);
 
-	// Initialize distance vector in device memory.
 	int *d_distance;
 	init_dist_vector(graph.n, source_vertex, d_distance);
 
-	// Initialize in queue and out queue.
 	int *d_queue_count, h_queue_count;
 	int *d_in_queue, *d_out_queue;
 	init_queue_with_edges(graph.nnz, d_in_queue, d_queue_count, h_queue_count, d_column_index, graph.ptr[source_vertex], graph.ptr[source_vertex+1]);
@@ -384,7 +382,6 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
-
 	// Start time measurement.
         cudaEventRecord(start);
 	cudaEventSynchronize(start);
@@ -431,6 +428,91 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 	// Cleanup device memory.
 	dispose_queue(d_in_queue, d_queue_count);
 	dispose_queue(d_out_queue);
+	dispose_distance_vector(d_distance); 
+	dispose_graph(d_row_offset, d_column_index);
+
+	// Fill result struct.
+	bfs::result result;
+	result.distance= h_distance;
+	result.total_time = miliseconds;
+    result.depth = iteration ? (iteration - 1) : 0;
+	return result;
+}
+
+bfs::result run_two_phase_bfs(csr::matrix graph, int source_vertex)
+{
+	// Initialize graph, distance vector, vertex and edge queues in device memory.
+	int *d_row_offset, *d_column_index;
+	init_graph(graph,d_row_offset,d_column_index);
+
+	int *d_distance;
+	init_dist_vector(graph.n, source_vertex, d_distance);
+
+	int *d_queue_count, h_queue_count;
+	int *d_edge_queue, *d_vertex_queue;
+	init_queue_with_vertex(graph.n, d_vertex_queue, d_queue_count, h_queue_count, source_vertex);
+	init_queue(graph.nnz, d_edge_queue);
+
+	// Create events for time measurement.
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	// Start time measurement.
+        cudaEventRecord(start);
+	cudaEventSynchronize(start);
+
+	// Start profiling.
+	cudaProfilerStart();
+
+	// Algorithm
+	int iteration = 0;
+	while(h_queue_count > 0)
+	{
+		// Empty queue.
+		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
+
+//		std::cout << "======== iteration\t" << iteration << " with blocks\t" << num_of_blocks << "=============" << std::endl;
+		//std::cout <<"in: " << h_queue_count << std::endl;
+		// Process vertex queue.
+		// Compute number of blocks needed so every vertex in queue gets one thread.
+		int num_of_blocks = div_up(h_queue_count,BLOCK_SIZE);
+		two_phase_expand<<<num_of_blocks,BLOCK_SIZE>>>(graph.nnz, d_row_offset, d_column_index, d_vertex_queue, h_queue_count, d_edge_queue, d_queue_count);
+
+		// Get queue count from device memory.
+		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count, sizeof(int), cudaMemcpyDeviceToHost));
+		// Empty queue.
+		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
+	
+		// Process edge queue.
+		// Compute number of blocks needed so every edge in queue gets one thread.
+		num_of_blocks = div_up(h_queue_count,BLOCK_SIZE);
+		two_phase_contract<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_distance, iteration, d_edge_queue, h_queue_count, d_vertex_queue, d_queue_count);
+		// Get queue count from device memory.
+		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count, sizeof(int), cudaMemcpyDeviceToHost));
+//		std::cout << "out: " << h_queue_count << std::endl;
+		iteration++;
+	}
+
+	// Stop profiling.
+	cudaProfilerStop();
+
+	// Compute elapsed time.
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float miliseconds = 0;
+	cudaEventElapsedTime(&miliseconds, start, stop);
+	// Cleanup events.
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	// Copy distance vector to host memory.
+	int *h_distance = new int[graph.n];
+	checkCudaErrors(cudaMemcpy(h_distance,d_distance,graph.n*sizeof(int),cudaMemcpyDeviceToHost));
+
+	// Cleanup device memory.
+	dispose_queue(d_vertex_queue, d_queue_count);
+	dispose_queue(d_edge_queue);
 	dispose_distance_vector(d_distance); 
 	dispose_graph(d_row_offset, d_column_index);
 

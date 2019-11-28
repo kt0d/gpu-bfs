@@ -425,3 +425,66 @@ __global__ void contract_expand_bfs(const int m, const int* const row_offset, co
 	}
 }
 
+__global__ void two_phase_expand(const int m, const int* const row_offset, const int* const column_index, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count)
+{
+	int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
+
+	// Get neighbor from the queue.
+	int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
+
+	int r = 0, r_end = 0;
+
+	if(v >= 0)
+	{
+		r = row_offset[v];
+		r_end = row_offset[v+1];
+	}
+
+	// Expand phase: expand adjacency lists and copy them to the out queue.
+	const bool big_list = (r_end - r) >= WARP_SIZE; 
+	const prescan_result warp_gather_prescan = block_prefix_sum(big_list ? (r_end - r):0);
+	__syncthreads(); // __syncthreads is very much needed because of shared array used in block_prefix_sum
+	const prescan_result fine_gather_prescan = block_prefix_sum(big_list ? 0 : (r_end - r));
+
+	volatile __shared__ int base_offset[1];
+	if(threadIdx.x == 0)
+	{
+		base_offset[0] = atomicAdd(out_queue_count, warp_gather_prescan.total + fine_gather_prescan.total);
+		assert(((base_offset[0]+warp_gather_prescan.total + fine_gather_prescan.total) < m));
+	}
+	__syncthreads();
+	int base = base_offset[0];	
+	warp_gather(column_index, out_queue, r, big_list ? r_end : 0, warp_gather_prescan.offset, base);
+	base += warp_gather_prescan.total;
+	fine_gather(column_index, out_queue, r, big_list ? 0: r_end, fine_gather_prescan.offset, fine_gather_prescan.total, base);
+
+}
+__global__ void two_phase_contract(const int n, int* const distance, const int iteration, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count)
+{
+	int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
+
+	// Get neighbor from the queue.
+	int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
+
+	// Contract phase: filter previously visited and duplicate neighbors.
+	volatile __shared__ int scratch[WARPS][HASH_RANGE];
+	v = warp_cull(scratch, v);
+	if(v >= 0 &&  distance[v] == bfs::infinity){
+		distance[v] = iteration+1;
+	}
+	else
+		v = -1;
+
+	const prescan_result prescan = block_prefix_sum(v >= 0 ? 1: 0);
+	volatile __shared__ int base_offset[1];
+	if(threadIdx.x == 0)
+	{
+		base_offset[0] = atomicAdd(out_queue_count, prescan.total);
+		assert( (base_offset[0]+prescan.total) < n);
+	}
+	__syncthreads();
+	if( v >= 0)
+	{
+		out_queue[base_offset[0]+prescan.offset] = v;
+	}
+}

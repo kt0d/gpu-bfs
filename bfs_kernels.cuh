@@ -13,3 +13,7 @@ __global__ void contract_expand_bfs(const int n, const int* const row_offset, co
 __global__ void quadratic_bfs(const int n, const int* row_offset, const int* column_index, int*const distance, const int iteration, bool*const done);
 
 __global__ void linear_bfs(const int n, const int* row_offset, const int*const column_index, int*const distance, const int iteration,const int*const in_queue,const int in_queue_count, int*const out_queue, int*const out_queue_count);
+
+__global__ void two_phase_expand(const int m, const int* const row_offset, const int* const column_index, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count);
+
+__global__ void two_phase_contract(const int n, int* const distance, const int iteration, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count);

@@ -13,8 +13,8 @@ INCLUDES=-I/usr/local/cuda/samples/common/inc
 
 all: ${TARGET}
 
-debug: DEBUG+=-g -G
-debug: main
+debug: DEBUG+=-G
+debug: ${TARGET}
 
 OBJECTS = main.o csr_matrix.o bfs.o bfs_cpu.o bfs_kernels.o
 
@@ -28,7 +28,7 @@ bfs.o: bfs.cu bfs.cuh common.h bfs_kernels.cuh
 	${NVCC} ${INCLUDES} ${DEBUG} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@
 
 main.o: main.cpp csr_matrix.h bfs.cuh bfs_cpu.h common.h
-	${NVCC} ${INCLUDES} ${DEBUG} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@
+	${NVCC} ${INCLUDES} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@
 
 csr_matrix.o: csr_matrix.cpp csr_matrix.h
 	${NVCC} ${INCLUDES} ${DEBUG} ${GENCODE_FLAGS} ${CUDA_COMPILER_OPTIONS} -c $< -o $@

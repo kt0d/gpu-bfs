@@ -28,6 +28,7 @@ void usage(const char *pname)
 		<< "-Q Run quadratic-work BFS" << std::endl
 		<< "-E Run expand-contract BFS" << std::endl
 		<< "-C Run contract-expand BFS" << std::endl
+		<< "-T Run two-phase BFS" << std::endl
 		<< "-c Run CPU BFS and compare results for corectness" << std::endl
 		<< "FILENAME must be square pattern matrix stored in Rutherford Boeing sparse matrix format (*.rb)" << std::endl;
 	exit(EXIT_FAILURE);
@@ -117,6 +118,9 @@ void process_arguments(int argc, char **argv, arguments& args)
 				break;
 			case 'C':
 				args.kernels_to_run.push_back(std::make_pair("Contract-expand", run_contract_expand_bfs));
+				break;
+			case 'T':
+				args.kernels_to_run.push_back(std::make_pair("Two-phase",run_two_phase_bfs));
 				break;
 			case 'n':
 				args.times = atoi(optarg);

@@ -3,13 +3,13 @@ do zapamiętania
 - kron jest MULTIGRAFEM
 1. projekt:
    - [x] dodać komentarze - wszędzie
-   - [ ] pozbyć się bezużytecznych komentarzy
+   - [x] pozbyć się bezużytecznych komentarzy
    - [ ] .h na .hpp
    - [ ] ładne formatowanie - clang-format
    - [ ] profiler…
    - [ ] zmierzyć metryki jak Merill et al.
 1. main:
-   - [ ] rozbić na funkcje
+   - [x] rozbić na funkcje
    - [x] opcja wielokrotnego odpalenia z losowego wierzchołka
    - [ ] wiele grafów
 1. csr\_matrix
