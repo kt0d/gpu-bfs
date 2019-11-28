@@ -16,6 +16,9 @@
 #include <unistd.h>
 #include <libgen.h>
 
+const std::string csv_header = "graph;vertices;edges;source;kernel;time;depth";
+const std::string csv_header_correct = "graph;vertices;edges;source;kernel;time;depth;correct";
+
 void usage(char *pname)
 {
 	std::cerr << "USAGE: " << pname << "[options] FILENAME" << std::endl
@@ -32,9 +35,12 @@ void usage(char *pname)
 
 struct comparison_result
 {
-	int diff, small, inf;
+	int diff;
+	int small;
+	int inf;
 };
 
+// Compare dist2 to dist1, counting different values, values in dist2 smaller than in dist1, infinity balues in dist2
 comparison_result compare_distance(const int* dist1,const int* dist2,const int n)
 {
 	comparison_result ret = {0, 0, 0};
@@ -53,9 +59,8 @@ comparison_result compare_distance(const int* dist1,const int* dist2,const int n
 }
 
 // Print result in CSV format
-void print_csv(const char* name, int n, int m, int s, const char* k, const bfs::result result, const int* dist_cpu)
+void print_csv(const char* name, int n, int m, int s, const std::string k, const bfs::result result, const int* dist_cpu)
 {
-			//print_csv(graph_name, graph.n, graph.nnz, source, "CPU", cpu_result, cpu_result.distance);
 	const char sep = ';';
 	std::basic_ostringstream<char> output;
 	output << name << sep << n << sep << m << sep << s << sep << k << sep << result.total_time << sep << result.depth;
@@ -81,7 +86,7 @@ int main(int argc, char **argv)
 	// Process options
 	bool  compare = false, print_info = false, print_matrix = false;
 	bool set_source = false;
-	std::list<std::pair<const char*, std::function<bfs::result(csr::matrix, int)>>> kernels_to_run; 
+	std::list<std::pair<std::string, std::function<bfs::result(csr::matrix, int)>>> kernels_to_run; 
 
 	char c;
 	int times = 1;
@@ -159,12 +164,11 @@ int main(int argc, char **argv)
 	std::random_device generator;
 	std::uniform_int_distribution<int> distribution(0,graph.n);
 
-    csr::print_row(graph, set_source_vertex);
-
-
+	if(compare)
+		std::cout << csv_header_correct << std::endl;
+	else
+		std::cout << csv_header << std::endl;
 	// Run kernels
-	// CSV header
-	std::cout << "graph;vertices;edges;source;kernel;time;depth" <<  (compare?";correct":"") << std::endl;
 	for(int i = 0; i < times; i++)
 	{
 		const int source = set_source ? set_source_vertex : distribution(generator);

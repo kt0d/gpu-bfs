@@ -7,7 +7,7 @@ namespace bfs
 	{
 		int* distance;
 		float total_time;
-        int depth;
+		int depth;
 	};
 
 	const int infinity = std::numeric_limits<int>::max();
