@@ -7,6 +7,11 @@
 
 constexpr unsigned int FULL_MASK = 0xffffffff;
 
+struct prescan_result
+{
+	int offset, total;
+};
+
 __global__ void quadratic_bfs(const int n, const int* row_offset, const int* column_index, int*const distance, const int iteration, bool*const done)
 {
 	// Compute corresponding vertex.
@@ -36,10 +41,11 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 {
 	// Compute index of corresponding vertex in the queue.
 	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
-	// Don't go out of bounds.
+
 	if(global_tid >= in_queue_count) return;
 	// Get vertex from the queue.
 	const int v = in_queue[global_tid];
+	// Load row range of vertex v.
 	const int r = row_offset[v];
 	const int r_end = row_offset[v+1];
 	for(int offset = r; offset < r_end; offset++)
@@ -83,7 +89,7 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 	return false;
 }
 
- __device__ int2 block_prefix_sum(const int val)
+ __device__ prescan_result block_prefix_sum(const int val)
 {
 	// Heavily inspired/copied from sample "shfl_scan" provided by NVIDIA.
 	// Block-wide prefix sum using shfl intrinsic.
@@ -135,11 +141,11 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 		value += block_sum;
 	}
 
-	int2 result;
+	prescan_result result;
 	// Subtract value given by thread to get exclusive prefix sum.
-	result.x = value - val;
+	result.offset = value - val;
 	// Get total sum.
-	result.y = sums[WARPS-1];
+	result.total = sums[WARPS-1];
 	return result; 
 }
 
@@ -210,16 +216,16 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 				}
 			}
 			// Obtain offset in queue by computing prefix sum
-			const int2 queue_offset = block_prefix_sum(is_valid?1:0);
+			const prescan_result prescan = block_prefix_sum(is_valid?1:0);
 			volatile __shared__ int base_offset[1];
 
 			// Obtain base enqueue offset and share it to whole block.
 			if(threadIdx.x == 0)
-				base_offset[0] = atomicAdd(out_queue_count,queue_offset.y);
+				base_offset[0] = atomicAdd(out_queue_count,prescan.total);
 			__syncthreads();
 			// Write vertex to the out queue.
 			if (is_valid)
-				out_queue[base_offset[0]+queue_offset.x] = neighbor;
+				out_queue[base_offset[0]+prescan.offset] = neighbor;
 
 			r_gather += BLOCK_SIZE;
 			block_progress+= BLOCK_SIZE;
@@ -230,27 +236,24 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 
  __device__ void fine_gather(const int* const column_index, int* const distance,cudaSurfaceObject_t bitmask_surf, const int iteration, int * const out_queue, int* const out_queue_count,int r, int r_end)
 {
-	const int2 ranks = block_prefix_sum(r_end-r);
-
-	int rsv_rank = ranks.x;
-	const int total = ranks.y;
+	prescan_result rank = block_prefix_sum(r_end-r);
 
 	__shared__ int comm[BLOCK_SIZE];
 	int cta_progress = 0;
 
-	while ((total - cta_progress) > 0)
+	while ((rank.total - cta_progress) > 0)
 	{
 		// Pack shared array with neighbors from adjacency lists.
-		while((rsv_rank < cta_progress + BLOCK_SIZE) && (r < r_end))
+		while((rank.offset < cta_progress + BLOCK_SIZE) && (r < r_end))
 		{
-			comm[rsv_rank - cta_progress] = r;
-			rsv_rank++;
+			comm[rank.offset - cta_progress] = r;
+			rank.offset++;
 			r++;
 		}
 		__syncthreads();
 		int neighbor;
 		bool is_valid = false;
-		if (threadIdx.x < (total - cta_progress))
+		if (threadIdx.x < (rank.total - cta_progress))
 		{
 			neighbor = column_index[comm[threadIdx.x]];
 			// Look up status
@@ -263,15 +266,15 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 		}
 		__syncthreads();
 		// Obtain offset in queue by computing prefix sum.
-		const int2 queue_offset = block_prefix_sum(is_valid?1:0);
+		const prescan_result prescan = block_prefix_sum(is_valid?1:0);
 		volatile __shared__ int base_offset[1];
 		// Obtain base enqueue offset
 		if(threadIdx.x == 0)
 		{
-			base_offset[0] = atomicAdd(out_queue_count,queue_offset.y);
+			base_offset[0] = atomicAdd(out_queue_count,prescan.total);
 		}
 		__syncthreads();
-		const int queue_index = base_offset[0] + queue_offset.x;
+		const int queue_index = base_offset[0] + prescan.offset;
 		// Write to queue
 		if (is_valid)
 		{
@@ -374,50 +377,51 @@ __global__ void contract_expand_bfs(const int m, const int* const row_offset, co
 
 	while(__syncthreads_or(global_tid < in_queue_count))
 	{
-	// Get neighbor from the queue.
-	int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
-	const int hash = ((BLOCK_SIZE) - 1) & v;
-	if(history[hash] == v)
-	{
-		v = -1;
-	}
-	else
-		history[hash] = v;
+		// Get neighbor from the queue.
+		int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
+		const int hash = ((BLOCK_SIZE) - 1) & v;
+		if(history[hash] == v)
+		{
+			v = -1;
+		}
+		else
+			history[hash] = v;
 
-	// Contract phase: filter previously visited and duplicate neighbors.
-	volatile __shared__ int scratch[WARPS][HASH_RANGE];
-	v = warp_cull(scratch, v);
-	if(v >= 0 &&  distance[v] == bfs::infinity){
-		distance[v] = iteration+1;
-	}
-	else
-		v = -1;
-	int r = 0, r_end = 0;
+		// Contract phase: filter previously visited and duplicate neighbors.
+		volatile __shared__ int scratch[WARPS][HASH_RANGE];
+		v = warp_cull(scratch, v);
+		if(v >= 0 &&  distance[v] == bfs::infinity){
+			distance[v] = iteration+1;
+		}
+		else
+			v = -1;
+		int r = 0, r_end = 0;
 
-	if(v >= 0)
-	{
-		r = row_offset[v];
-		r_end = row_offset[v+1];
-	}
+		if(v >= 0)
+		{
+			r = row_offset[v];
+			r_end = row_offset[v+1];
+		}
 
-	// Expand phase: expand adjacency lists and copy them to the out queue.
-	const bool big_list = (r_end - r) >= WARP_SIZE; 
-	const int2 warp_gather_prescan = block_prefix_sum(big_list ? (r_end - r):0);
-	__syncthreads(); // __syncthreads is very much needed because of shared array used in block_prefix_sum
-	const int2 fine_gather_prescan = block_prefix_sum(big_list ? 0 : (r_end - r));
-	
-	volatile __shared__ int base_offset[1];
-	if(threadIdx.x == 0)
-		base_offset[0] = atomicAdd(out_queue_count, warp_gather_prescan.y + fine_gather_prescan.y);
-	__syncthreads();
-	int base = base_offset[0];	
-	assert(threadIdx.x != 0 || ((base+warp_gather_prescan.y + fine_gather_prescan.y) < m));
-	warp_gather(column_index, out_queue, r, big_list ? r_end : 0, warp_gather_prescan.x, base);
-	base += warp_gather_prescan.y;
-	fine_gather(column_index, out_queue, r, big_list ? 0: r_end, fine_gather_prescan.x, fine_gather_prescan.y, base);
+		// Expand phase: expand adjacency lists and copy them to the out queue.
+		const bool big_list = (r_end - r) >= WARP_SIZE; 
+		const prescan_result warp_gather_prescan = block_prefix_sum(big_list ? (r_end - r):0);
+		__syncthreads(); // __syncthreads is very much needed because of shared array used in block_prefix_sum
+		const prescan_result fine_gather_prescan = block_prefix_sum(big_list ? 0 : (r_end - r));
 
+		volatile __shared__ int base_offset[1];
+		if(threadIdx.x == 0)
+		{
+			base_offset[0] = atomicAdd(out_queue_count, warp_gather_prescan.total + fine_gather_prescan.total);
+			assert(((base_offset[0]+warp_gather_prescan.total + fine_gather_prescan.total) < m));
+		}
+		__syncthreads();
+		int base = base_offset[0];	
+		warp_gather(column_index, out_queue, r, big_list ? r_end : 0, warp_gather_prescan.offset, base);
+		base += warp_gather_prescan.total;
+		fine_gather(column_index, out_queue, r, big_list ? 0: r_end, fine_gather_prescan.offset, fine_gather_prescan.total, base);
 
-	global_tid += gridDim.x*blockDim.x;
+		global_tid += gridDim.x*blockDim.x;
 	}
 }
 

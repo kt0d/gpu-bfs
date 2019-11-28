@@ -9,7 +9,7 @@ namespace csr
 	{
 		int n; // matrix dimension
 		int nnz; // number of non-zero entries
-		int* ptr; // array of length (n+1)  of pointers to indices in index array
+		int* ptr; // array of length (n+1) of pointers to indices in index array
 		int* index; // array of length nnz of indices
 	};
 
@@ -18,6 +18,6 @@ namespace csr
 	matrix expand_symmetric_matrix(matrix mat);
 	void dispose_matrix(matrix& mat);
 	void print_matrix(const matrix mat, std::ostream& output = std::cout, bool print_compressed = false, bool print_full = false);
-	void print_adjacency_list(const matrix mat, int v, std::ostream& output = std::cout);
+	void print_row(const matrix mat, int v, std::ostream& output = std::cout);
 
 }

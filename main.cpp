@@ -159,7 +159,7 @@ int main(int argc, char **argv)
 	std::random_device generator;
 	std::uniform_int_distribution<int> distribution(0,graph.n);
 
-    csr::print_adjacency_list(graph, set_source_vertex);
+    csr::print_row(graph, set_source_vertex);
 
 
 	// Run kernels
