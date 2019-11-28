@@ -21,7 +21,8 @@ do zapamiętania
    - [x] initialize\_vertex\_queue - rozbić na wzór initialize\_edge\_queue
    - [x] in\_queue\_count, out\_queue\_count - przerobić na memcpy albo chociaż pinned memory; po przerobieniu na mapped pinned memory potężnie zwolniło, mogę jeszcze spróbwać memcpy ale na razie nie chcę; jest memcpy i jest ok
 1. kernele: 
-   - [ ] tile of input; zrobione dla contract_expand
+   - [ ] warp\_cull - cofnąć do tego bez maski active i zobaczyć czy concrat\_expand działa
+   - [ ] tile of input; zrobione dla contract\_expand
    - [x] fix block\_gather
    - [ ] by oszczędzić na rejestrach możnaw warp\_cull i status\_lookup zamiast bool zwracać albo prawidłowy vertex albo -1, pozbyć się remain
    - [ ] zmniejszyć użycie rejestrów: możne je zbadać kompilując z opcją -dc i otwierając plik obiektowy przez 'cuobjdump -elf'
@@ -29,4 +30,4 @@ do zapamiętania
    - [ ] shared memory - statycznie w funkcjach vs statycznie w kernelu vs dynamicznie
    - [ ] 2d bitmask (?)
 1. two-phe:
-   - [ ] zrobić
+   - [x] zrobić

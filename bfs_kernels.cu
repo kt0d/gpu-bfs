@@ -77,6 +77,7 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 		// Vie to be the only thread in warp inspecting vertex v.
 		scratch[warp_id][hash] = threadIdx.x;
 		__syncwarp(active);
+		// Some other thread has this vertex
 		if(scratch[warp_id][hash] != threadIdx.x)
 			return -1;
 	}
@@ -390,6 +391,7 @@ __global__ void contract_expand_bfs(const int m, const int* const row_offset, co
 		// Contract phase: filter previously visited and duplicate neighbors.
 		volatile __shared__ int scratch[WARPS][HASH_RANGE];
 		v = warp_cull(scratch, v);
+		__syncthreads();
 		if(v >= 0 &&  distance[v] == bfs::infinity){
 			distance[v] = iteration+1;
 		}
@@ -408,6 +410,7 @@ __global__ void contract_expand_bfs(const int m, const int* const row_offset, co
 		const prescan_result warp_gather_prescan = block_prefix_sum(big_list ? (r_end - r):0);
 		__syncthreads(); // __syncthreads is very much needed because of shared array used in block_prefix_sum
 		const prescan_result fine_gather_prescan = block_prefix_sum(big_list ? 0 : (r_end - r));
+		//printf("%d of %d, %d of %d\n", warp_gather_prescan.offset, warp_gather_prescan.total, fine_gather_prescan.offset, fine_gather_prescan.total);
 
 		volatile __shared__ int base_offset[1];
 		if(threadIdx.x == 0)

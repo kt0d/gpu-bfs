@@ -170,7 +170,7 @@ int main(int argc, char **argv)
 	if(args.print_info)
 		std::cout << graph_name << " with " << graph.n << " vertices and " << graph.nnz << " edges" << std::endl;
 	if(args.print_matrix)
-		csr::print_matrix(graph,std::cout);
+		csr::print_matrix(graph,std::cout,true,false);
 	if(args.kernels_to_run.size() == 0)
 	{
 		csr::dispose_matrix(graph);

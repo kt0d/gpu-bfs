@@ -14,9 +14,11 @@ function max_of(array){
 BEGIN{
     FS=";"
     PREC=100 # i'm not sure if it even works
+    print ARGV[1]
 }
 
-{if($1 != "graph"){ #ignore CSV headers
+{
+if($1 != "graph"){ #ignore CSV headers
     graph = $1
     kernel = $5
     edges[graph] = $3 
@@ -26,11 +28,12 @@ BEGIN{
     avg_through[graph][kernel] += ($3 / $6) / 1000 #throughput in 10^6 edges per sec
     hmean[kernel] += (1 / avg_through[graph][kernel])
     count[graph][kernel]++
-}}
+}
+}
 
 END{
     for(graph in avg_time){
-        printf "%-25s \nn=%-10'd m=%-12'd avg. degree=%s\n", graph, vertices[graph], edges[graph],  avg_degree[graph]
+        printf "%-25s \nn=%-10'd m=%-12'd avg. degree=%-5.2f mem=%sMiB\n", graph, vertices[graph], edges[graph],  avg_degree[graph], 4*(edges[graph]+vertices[graph]+1)/1048576
         for(kernel in avg_time[graph]){
             avg_time[graph][kernel] /= count[graph][kernel]
             avg_through[graph][kernel] /= count[graph][kernel]

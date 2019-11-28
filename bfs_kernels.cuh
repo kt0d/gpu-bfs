@@ -1,6 +1,6 @@
 #pragma once
 constexpr size_t WARP_SIZE= 32;
-constexpr size_t BLOCK_SIZE = 256;
+constexpr size_t BLOCK_SIZE = 512;
 constexpr size_t WARPS = BLOCK_SIZE / WARP_SIZE;
 constexpr size_t HASH_RANGE = 128;
 

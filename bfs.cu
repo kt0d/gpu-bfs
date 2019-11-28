@@ -192,7 +192,7 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 		linear_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue, h_queue_count,d_out_queue, d_queue_count);
 		// Get queue count
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count,sizeof(int), cudaMemcpyDeviceToHost));
-		std::cout << h_queue_count << std::endl;
+		//std::cout << h_queue_count << std::endl;
 
 		iteration++;
 		std::swap(d_in_queue,d_out_queue);
@@ -396,11 +396,11 @@ bfs::result run_contract_expand_bfs(csr::matrix graph, int source_vertex)
 		// Empty queue.
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
 		// Compute number of blocks needed so every edge in queue gets one thread.
-		const int num_of_blocks = div_up(h_queue_count,BLOCK_SIZE);
+		const int num_of_blocks = div_up(h_queue_count,16*BLOCK_SIZE);
 
 //		std::cout << "======== iteration\t" << iteration << " with blocks\t" << num_of_blocks << "=============" << std::endl;
 //		std::cout <<"in: " << h_queue_count << std::endl;
-		contract_expand_bfs<<<div_up(num_of_blocks,4),BLOCK_SIZE>>>(graph.nnz, d_row_offset, d_column_index, d_distance, iteration, d_in_queue, h_queue_count, d_out_queue, d_queue_count);
+		contract_expand_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.nnz, d_row_offset, d_column_index, d_distance, iteration, d_in_queue, h_queue_count, d_out_queue, d_queue_count);
 
 		// Get queue count from device memory.
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count, sizeof(int), cudaMemcpyDeviceToHost));
