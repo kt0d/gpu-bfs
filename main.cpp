@@ -19,7 +19,7 @@
 const std::string csv_header = "graph;vertices;edges;source;kernel;time;depth";
 const std::string csv_header_correct = "graph;vertices;edges;source;kernel;time;depth;correct";
 
-void usage(char *pname)
+void usage(const char *pname)
 {
 	std::cerr << "USAGE: " << pname << "[options] FILENAME" << std::endl
 		<< "-p Print size of matrix" << std::endl
@@ -59,7 +59,7 @@ comparison_result compare_distance(const int* dist1,const int* dist2,const int n
 }
 
 // Print result in CSV format
-void print_csv(const char* name, int n, int m, int s, const std::string k, const bfs::result result, const int* dist_cpu)
+void print_csv(std::string name, int n, int m, int s, const std::string k, const bfs::result result, const int* dist_cpu)
 {
 	const char sep = ';';
 	std::basic_ostringstream<char> output;
@@ -81,46 +81,49 @@ void print_csv(const char* name, int n, int m, int s, const std::string k, const
 	std::cout << output.str();
 }
 
-int main(int argc, char **argv)
+struct arguments
 {
-	// Process options
-	bool  compare = false, print_info = false, print_matrix = false;
+	bool compare = false, print_info = false, print_matrix = false;
 	bool set_source = false;
 	std::list<std::pair<std::string, std::function<bfs::result(csr::matrix, int)>>> kernels_to_run; 
-
-	char c;
 	int times = 1;
 	int set_source_vertex;
+	std::string graph_location;
+};
+
+void process_arguments(int argc, char **argv, arguments& args)
+{
+	char c;
 	while ((c = getopt(argc, argv, "cpmLQECTn:s:")) != -1)
 		switch(c)
 		{
 			case 'L':
-				kernels_to_run.push_back(std::make_pair("Linear",run_linear_bfs));
+				args.kernels_to_run.push_back(std::make_pair("Linear",run_linear_bfs));
 				break;
 			case 'Q':
-				kernels_to_run.push_back(std::make_pair("Quadratic", run_quadratic_bfs));
+				args.kernels_to_run.push_back(std::make_pair("Quadratic", run_quadratic_bfs));
 				break;
 			case 'c':
-				compare = true;
+				args.compare = true;
 				break;
 			case 'p':
-				print_info=true;
+				args.print_info=true;
 				break;
 			case 'm':
-				print_matrix=true;
+				args.print_matrix=true;
 				break;
 			case 'E':
-				kernels_to_run.push_back(std::make_pair("Expand-contract", run_expand_contract_bfs));
+				args.kernels_to_run.push_back(std::make_pair("Expand-contract", run_expand_contract_bfs));
 				break;
 			case 'C':
-				kernels_to_run.push_back(std::make_pair("Contract-expand", run_contract_expand_bfs));
+				args.kernels_to_run.push_back(std::make_pair("Contract-expand", run_contract_expand_bfs));
 				break;
 			case 'n':
-				times = atoi(optarg);
+				args.times = atoi(optarg);
 				break;
 			case 's':
-				set_source = true;
-				set_source_vertex = atoi(optarg);
+				args.set_source = true;
+				args.set_source_vertex = atoi(optarg);
 				break;
 
 			default:
@@ -129,11 +132,19 @@ int main(int argc, char **argv)
 
 	if(optind < 2 || optind >= argc)
 		usage(argv[0]);
+	args.graph_location=argv[optind];
+}
+
+int main(int argc, char **argv)
+{
+	// Process options
+	arguments args;
+	process_arguments(argc,argv,args);
+
 
 	// Load graph
-	const char* graph_name=argv[optind];
 	std::ifstream rb_file;
-	rb_file.open(graph_name);
+	rb_file.open(args.graph_location);
 	if(!rb_file.good())
 	{
 		std::cerr << "Incorrect file" << std::endl;
@@ -143,19 +154,20 @@ int main(int argc, char **argv)
 	rb_file.close();
 
 	// If source vertex was chosen explicitly, check if it's correct
-	if(set_source && (set_source_vertex < 0 || set_source_vertex >= graph.n))
+	if(args.set_source && (args.set_source_vertex < 0 || args.set_source_vertex >= graph.n))
 	{
-		std::cerr << "Vertex " << set_source_vertex << " does not belong to loaded graph" << std::endl;
+		std::cerr << "Vertex " << args.set_source_vertex << " does not belong to loaded graph" << std::endl;
 		csr::dispose_matrix(graph);
 		usage(argv[0]);
 	}
 
-	graph_name = basename(argv[optind]);
-	if(print_info)
-		std::cout << "Graph with " << graph.n << " vertices and " << graph.nnz << " edges" << std::endl;
-	if(print_matrix)
+	// Get filename
+	std::string graph_name = basename(&args.graph_location[0]);
+	if(args.print_info)
+		std::cout << graph_name << " with " << graph.n << " vertices and " << graph.nnz << " edges" << std::endl;
+	if(args.print_matrix)
 		csr::print_matrix(graph,std::cout);
-	if(kernels_to_run.size() == 0)
+	if(args.kernels_to_run.size() == 0)
 	{
 		csr::dispose_matrix(graph);
 		return EXIT_SUCCESS;
@@ -164,24 +176,24 @@ int main(int argc, char **argv)
 	std::random_device generator;
 	std::uniform_int_distribution<int> distribution(0,graph.n);
 
-	if(compare)
+	if(args.compare)
 		std::cout << csv_header_correct << std::endl;
 	else
 		std::cout << csv_header << std::endl;
 	// Run kernels
-	for(int i = 0; i < times; i++)
+	for(int i = 0; i < args.times; i++)
 	{
-		const int source = set_source ? set_source_vertex : distribution(generator);
+		const int source = args.set_source ? args.set_source_vertex : distribution(generator);
 
 		bfs::result cpu_result;
 		cpu_result.distance = nullptr;
-		if(compare)
+		if(args.compare)
 		{
 			cpu_result = cpu_bfs(graph,source);
 			print_csv(graph_name, graph.n, graph.nnz, source, "CPU", cpu_result, cpu_result.distance);
 		}
 
-		for (auto& it: kernels_to_run)
+		for (auto& it: args.kernels_to_run)
 		{
 			auto bfs_func = it.second;
 			bfs::result result = bfs_func(graph,source);
@@ -191,7 +203,7 @@ int main(int argc, char **argv)
 			delete[] result.distance;
 		}
 
-		if(compare)
+		if(args.compare)
 			delete[] cpu_result.distance;
 
 	}
