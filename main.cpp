@@ -15,24 +15,121 @@
 
 #include <unistd.h>
 #include <libgen.h>
+#include <argp.h>
 
 const std::string csv_header = "graph;vertices;edges;source;kernel;time;depth";
 const std::string csv_header_correct = "graph;vertices;edges;source;kernel;time;depth;correct";
 
-void usage(const char *pname)
+struct arguments
 {
-	std::cerr << "USAGE: " << pname << "[options] FILENAME" << std::endl
-		<< "-p Print size of matrix" << std::endl
-		<< "-m Print matrix" << std:: endl
-		<< "-L Run linear-work BFS with blocking queue" << std::endl
-		<< "-Q Run quadratic-work BFS" << std::endl
-		<< "-E Run expand-contract BFS" << std::endl
-		<< "-C Run contract-expand BFS" << std::endl
-		<< "-T Run two-phase BFS" << std::endl
-		<< "-c Run CPU BFS and compare results for corectness" << std::endl
-		<< "FILENAME must be square pattern matrix stored in Rutherford Boeing sparse matrix format (*.rb)" << std::endl;
-	exit(EXIT_FAILURE);
+	bool compare = false, print_info = false, print_matrix = false;
+	bool set_source = false;
+	std::list<std::pair<std::string, std::function<bfs::result(csr::matrix, int)>>> kernels_to_run; 
+	int times = 1;
+	int set_source_vertex;
+	std::string graph_location;
+};
+
+static char args_doc[] = "GRAPH";
+static char doc[] = "  gpu-bfs - an implementation of breadth-first search using CUDA\v"
+"Program prints to stdout information in CSV format about every BFS run.\n";
+//"Please be aware of GPU memory limitations. Too many BFS runs in one program call can produce out of memory errors, depending on the size of a graph.";
+
+enum 
+{
+	file_group, print_group, setup_group, simple_group, advanced_group
+};
+
+static struct argp_option options[] =
+{
+	{args_doc,		0, 0, OPTION_DOC,
+		"An adjacency matrix of a graph, stored in Rutherford-Boeing compressed column format\n", file_group},
+	{"print",		'p', 0,	0,
+		"Print size of a graph",print_group},
+
+	{"matrix",		'm', 0,	0,
+		"Print adjacency matrix of a graph",print_group},
+	{"source",		's', "VERTEX", 0,
+
+		"Select source vertex",setup_group},
+
+	{"times",		'n', "NUMBER", 0,
+		"Run every search NUMBER times", setup_group},
+
+	{"cpu",			'c', 0, 0,
+		"Run sequential BFS algorithm on CPU and compare results with other search methods", setup_group},
+
+	{"linear",		'L', 0, 0,
+		"Run linear-work BFS with blocking queue", simple_group},
+
+	{"quadratic",		'Q', 0, 0,
+		"Run simple quadratic-work BFS", simple_group},
+
+	{"expand-contract",	'E', 0, 0,
+		"Run expand-contract BFS", advanced_group},
+	
+	{"contract-expand",	'C', 0, 0,
+		"Run contract-expand BFS", advanced_group},
+
+	{"two-phase",		'T', 0, 0,
+		"Run two-phase BFS", advanced_group},
+	{0, 0, 0, 0, 0, 0}
+};
+
+static error_t parse_opt(int key, char* arg, struct argp_state *state)
+{
+	arguments *args = (arguments*)state->input;
+
+	switch(key)
+	{
+		case 'p':
+			args->print_info=true;
+			break;
+		case 'm':
+			args->print_matrix=true;
+			break;
+		case 's':
+			args->set_source = true;
+			args->set_source_vertex = atoi(arg);
+			break;
+		case 'n':
+			args->times = atoi(arg);
+			break;
+		case 'L':
+			args->kernels_to_run.push_back(std::make_pair("Linear",run_linear_bfs));
+			break;
+		case 'Q':
+			args->kernels_to_run.push_back(std::make_pair("Quadratic", run_quadratic_bfs));
+			break;
+		case 'E':
+			args->kernels_to_run.push_back(std::make_pair("Expand-contract", run_expand_contract_bfs));
+			break;
+		case 'C':
+			args->kernels_to_run.push_back(std::make_pair("Contract-expand", run_contract_expand_bfs));
+			break;
+		case 'T':
+			args->kernels_to_run.push_back(std::make_pair("Two-phase",run_two_phase_bfs));
+			break;
+		case 'c':
+			args->compare = true;
+			break;
+		case ARGP_KEY_ARG:
+			if(state->arg_num >= 1)
+				argp_failure(state, EXIT_FAILURE, 0, "too many arguments");
+			args->graph_location = arg;
+			break;
+		case ARGP_KEY_END:
+			if(state->arg_num < 1)
+				argp_failure(state, EXIT_FAILURE, 0, "too few arguments");
+			break;
+		default:
+			return ARGP_ERR_UNKNOWN;
+	}
+	return 0;
 }
+
+static struct argp argp = { options, parse_opt, args_doc, doc, nullptr, nullptr, nullptr};
+
 
 struct comparison_result
 {
@@ -59,7 +156,7 @@ comparison_result compare_distance(const int* dist1,const int* dist2,const int n
 	return ret;
 }
 
-// Print result in CSV format
+// Print result in CSV format with information on correctness of the result, if CPU distance vector is available.
 void print_csv(std::string name, int n, int m, int s, const std::string k, const bfs::result result, const int* dist_cpu)
 {
 	const char sep = ';';
@@ -82,87 +179,31 @@ void print_csv(std::string name, int n, int m, int s, const std::string k, const
 	std::cout << output.str();
 }
 
-struct arguments
-{
-	bool compare = false, print_info = false, print_matrix = false;
-	bool set_source = false;
-	std::list<std::pair<std::string, std::function<bfs::result(csr::matrix, int)>>> kernels_to_run; 
-	int times = 1;
-	int set_source_vertex;
-	std::string graph_location;
-};
-
-void process_arguments(int argc, char **argv, arguments& args)
-{
-	char c;
-	while ((c = getopt(argc, argv, "cpmLQECTn:s:")) != -1)
-		switch(c)
-		{
-			case 'L':
-				args.kernels_to_run.push_back(std::make_pair("Linear",run_linear_bfs));
-				break;
-			case 'Q':
-				args.kernels_to_run.push_back(std::make_pair("Quadratic", run_quadratic_bfs));
-				break;
-			case 'c':
-				args.compare = true;
-				break;
-			case 'p':
-				args.print_info=true;
-				break;
-			case 'm':
-				args.print_matrix=true;
-				break;
-			case 'E':
-				args.kernels_to_run.push_back(std::make_pair("Expand-contract", run_expand_contract_bfs));
-				break;
-			case 'C':
-				args.kernels_to_run.push_back(std::make_pair("Contract-expand", run_contract_expand_bfs));
-				break;
-			case 'T':
-				args.kernels_to_run.push_back(std::make_pair("Two-phase",run_two_phase_bfs));
-				break;
-			case 'n':
-				args.times = atoi(optarg);
-				break;
-			case 's':
-				args.set_source = true;
-				args.set_source_vertex = atoi(optarg);
-				break;
-
-			default:
-				usage(argv[0]);
-		}
-
-	if(optind < 2 || optind >= argc)
-		usage(argv[0]);
-	args.graph_location=argv[optind];
-}
-
 int main(int argc, char **argv)
 {
-	// Process options
+	// Process options.
 	arguments args;
-	process_arguments(argc,argv,args);
-
+	argp_parse(&argp, argc, argv, 0, 0, &args);
 
 	// Load graph
 	std::ifstream rb_file;
 	rb_file.open(args.graph_location);
 	if(!rb_file.good())
 	{
-		std::cerr << "Incorrect file" << std::endl;
-		usage(argv[0]);
+		std::cerr << "Incorrect file." << std::endl;
+		argp_help(&argp, stdout, ARGP_HELP_USAGE, argv[0]);
+		exit(EXIT_FAILURE);
 	}
 	csr::matrix graph= csr::load_matrix(rb_file);
 	rb_file.close();
 
-	// If source vertex was chosen explicitly, check if it's correct
+	// If source vertex was chosen explicitly, check if it's correct.
 	if(args.set_source && (args.set_source_vertex < 0 || args.set_source_vertex >= graph.n))
 	{
-		std::cerr << "Vertex " << args.set_source_vertex << " does not belong to loaded graph" << std::endl;
+		std::cerr << "Vertex " << args.set_source_vertex << " does not belong to loaded graph." << std::endl;
+		argp_help(&argp, stdout, ARGP_HELP_USAGE, argv[0]);
 		csr::dispose_matrix(graph);
-		usage(argv[0]);
+		exit(EXIT_FAILURE);
 	}
 
 	// Get filename
