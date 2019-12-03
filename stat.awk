@@ -1,3 +1,8 @@
+# A simple script to process output of gpu-bfs.
+# To run it, redirect stdout of gpu-bfs to file and
+# use
+#	awk -f stat.awk file
+
 #graph;vertices;edges;source;kernel;time;depth
 #$1   ;$2      ;$3   ;$4    ;$5    ;$6  ;$7
 
@@ -13,8 +18,7 @@ function max_of(array){
 
 BEGIN{
     FS=";"
-    PREC=100 # i'm not sure if it even works
-    print ARGV[1]
+    print ARGV[1] # print filename
 }
 
 {
