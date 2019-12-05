@@ -168,8 +168,11 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 
 	int *d_queue_count, h_queue_count;
 	int *d_in_queue, *d_out_queue;
-	init_queue_with_vertex(graph.n, d_in_queue, d_queue_count, h_queue_count, source_vertex);
-	init_queue(graph.n, d_out_queue);
+	// Because linear kernel contains no duplicate-eliminating heuristics, to 
+	// achieve succesful traversal size of queue should be more than number of 
+	// vertices. 
+	init_queue_with_vertex(graph.nnz, d_in_queue, d_queue_count, h_queue_count, source_vertex);
+	init_queue(graph.nnz, d_out_queue);
 
 	// Create events for time measurement.
 	cudaEvent_t start, stop;
@@ -186,11 +189,11 @@ bfs::result run_linear_bfs(const csr::matrix graph, int source_vertex)
 	{
 		// Empty queue.
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
-		// Compute number of blocks needed so every vertex in queue gets one thread.
+		// Compute number of blocks needed.
 		const int num_of_blocks = div_up(h_queue_count,
 				QUEUE_RATIO_LINEAR * BLOCK_SIZE);
 		// Run kernel.
-		linear_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_row_offset,d_column_index,d_distance,iteration, d_in_queue, h_queue_count,d_out_queue, d_queue_count);
+		linear_bfs<<<num_of_blocks,BLOCK_SIZE>>>(graph.nnz,d_row_offset,d_column_index,d_distance,iteration, d_in_queue, h_queue_count,d_out_queue, d_queue_count);
 		// Get queue count
 		checkCudaErrors(cudaMemcpy(&h_queue_count, d_queue_count,sizeof(int), cudaMemcpyDeviceToHost));
 		//std::cout << h_queue_count << std::endl;
@@ -324,7 +327,7 @@ bfs::result run_expand_contract_bfs(const csr::matrix graph, int source_vertex)
 	{
 		// Empty queue.
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
-		// Compute number of blocks needed so very vertex in queue gets one thread.
+		// Compute number of blocks needed.
 		const int num_of_blocks = div_up(h_queue_count,
 				QUEUE_RATIO_EXPAND_CONTRACT * BLOCK_SIZE);
 
@@ -397,7 +400,7 @@ bfs::result run_contract_expand_bfs(const csr::matrix graph, int source_vertex)
 	{
 		// Empty queue.
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
-		// Compute number of blocks needed so every edge in queue gets one thread.
+		// Compute number of blocks needed.
 		const int num_of_blocks = div_up(h_queue_count,
 				QUEUE_RATIO_CONTRACT_EXPAND * BLOCK_SIZE);
 
@@ -477,7 +480,7 @@ bfs::result run_two_phase_bfs(const csr::matrix graph, int source_vertex)
 
 //		std::cout << "======== iteration\t" << iteration << " with blocks\t" << num_of_blocks << "=============" << std::endl;
 		// Process vertex queue.
-		// Compute number of blocks needed so every vertex in queue gets one thread.
+		// Compute number of blocks needed.
 		int num_of_blocks = div_up(h_queue_count,
 				QUEUE_RATIO_TWO_PHASE_VERTEX * BLOCK_SIZE);
 		two_phase_expand<<<num_of_blocks,BLOCK_SIZE>>>(graph.nnz, d_row_offset, d_column_index, d_vertex_queue, h_queue_count, d_edge_queue, d_queue_count);
@@ -488,7 +491,7 @@ bfs::result run_two_phase_bfs(const csr::matrix graph, int source_vertex)
 		checkCudaErrors(cudaMemset(d_queue_count,0,sizeof(int)));
 	
 		// Process edge queue.
-		// Compute number of blocks needed so every edge in queue gets one thread.
+		// Compute number of blocks needed.
 		num_of_blocks = div_up(h_queue_count,
 				QUEUE_RATIO_TWO_PHASE_EDGE * BLOCK_SIZE);
 		two_phase_contract<<<num_of_blocks,BLOCK_SIZE>>>(graph.n,d_distance, iteration, d_edge_queue, h_queue_count, d_vertex_queue, d_queue_count);

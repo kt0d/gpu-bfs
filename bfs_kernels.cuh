@@ -7,8 +7,8 @@ constexpr size_t HASH_RANGE = 128;
 
 // By changing these, you can tune how many vertices/edges from the queue will
 // be processed by one thread.
-constexpr int QUEUE_RATIO_TWO_PHASE_VERTEX 	= 1;
-constexpr int QUEUE_RATIO_TWO_PHASE_EDGE 	= 4;
+constexpr int QUEUE_RATIO_TWO_PHASE_VERTEX 	= 4;
+constexpr int QUEUE_RATIO_TWO_PHASE_EDGE 	= 10;
 constexpr int QUEUE_RATIO_CONTRACT_EXPAND	= 4;
 constexpr int QUEUE_RATIO_EXPAND_CONTRACT	= 1;
 constexpr int QUEUE_RATIO_LINEAR		= 4;

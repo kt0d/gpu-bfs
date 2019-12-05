@@ -40,26 +40,31 @@ __global__ void quadratic_bfs(const int n, const int* row_offset, const int* col
 __global__ void linear_bfs(const int n, const int* row_offset, const int*const column_index, int*const distance, const int iteration,const int*const in_queue,const int in_queue_count, int*const out_queue, int*const out_queue_count)
 {
 	// Compute index of corresponding vertex in the queue.
-	const int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
+	int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 
-	if(global_tid >= in_queue_count) return;
-	// Get vertex from the queue.
-	const int v = in_queue[global_tid];
-	// Load row range of vertex v.
-	const int r = row_offset[v];
-	const int r_end = row_offset[v+1];
-	for(int offset = r; offset < r_end; offset++)
+	do
 	{
-		const int j = column_index[offset];
-		if(distance[j] == bfs::infinity)
+		if(global_tid >= in_queue_count) continue;
+		// Get vertex from the queue.
+		const int v = in_queue[global_tid];
+		// Load row range of vertex v.
+		const int r = row_offset[v];
+		const int r_end = row_offset[v+1];
+		for(int offset = r; offset < r_end; offset++)
 		{
-			distance[j]=iteration+1;
-			// Enqueue vertex.
-			const int ind = atomicAdd(out_queue_count,1);
-			assert(ind < n);
-			out_queue[ind]=j;
+			const int j = column_index[offset];
+			if(distance[j] == bfs::infinity)
+			{
+				distance[j]=iteration+1;
+				// Enqueue vertex.
+				const int ind = atomicAdd(out_queue_count,1);
+				assert(ind < n);
+				out_queue[ind]=j;
+			}
 		}
-	}
+		global_tid += gridDim.x*blockDim.x;
+	} 
+	while(__syncthreads_or(global_tid < in_queue_count));
 }
 
  __device__ int warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
@@ -297,22 +302,27 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 {
 	int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
 
-	// Get vertex from the queue.
-	int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
+	do
+	{
+		// Get vertex from the queue.
+		int v = global_tid < in_queue_count? in_queue[global_tid]:-1;
 
-	// Do local warp-culling.
-	volatile __shared__ int scratch[WARPS][HASH_RANGE];
-	v = warp_cull(scratch, v);
+		// Do local warp-culling.
+		volatile __shared__ int scratch[WARPS][HASH_RANGE];
+		v = warp_cull(scratch, v);
 
-	// Load corresponding row-ranges.
-	const int r =  v < 0 ?0:row_offset[v];
-	const int r_end = v < 0?0:row_offset[v+1];
-	const bool big_list = (r_end - r) >= BLOCK_SIZE;
+		// Load corresponding row-ranges.
+		const int r =  v < 0 ?0:row_offset[v];
+		const int r_end = v < 0?0:row_offset[v+1];
+		const bool big_list = (r_end - r) >= BLOCK_SIZE;
 
-	// Both expand and contract phases occur in these functions.
-	block_gather(column_index, distance,bitmask_surf, iteration, out_queue, out_queue_count, r, big_list ? r_end : r);
-	fine_gather(column_index, distance,bitmask_surf, iteration, out_queue, out_queue_count, r, big_list ? r : r_end);
+		// Both expand and contract phases occur in these functions.
+		block_gather(column_index, distance,bitmask_surf, iteration, out_queue, out_queue_count, r, big_list ? r_end : r);
+		fine_gather(column_index, distance,bitmask_surf, iteration, out_queue, out_queue_count, r, big_list ? r : r_end);
 
+		global_tid += gridDim.x*blockDim.x;
+	}
+	while(__syncthreads_or(global_tid < in_queue_count));
 }
 
  __device__ void fine_gather(const int* const column_index, int* const out_queue, int r, int r_end, int rsv_rank, const int total, const int base_offset)
@@ -468,6 +478,7 @@ __global__ void two_phase_expand(const int m, const int* const row_offset, const
 	while(__syncthreads_or(global_tid < in_queue_count));
 
 }
+
 __global__ void two_phase_contract(const int n, int* const distance, const int iteration, const int*const in_queue,const int in_queue_count, int* const out_queue, int* const out_queue_count)
 {
 	int global_tid = blockIdx.x*blockDim.x + threadIdx.x;
