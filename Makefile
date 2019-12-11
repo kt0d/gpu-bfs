@@ -7,7 +7,7 @@ CUDA_COMPILER_OPTIONS=$(addprefix --compiler-options ,${CCFLAGS}) --std=c++11 -d
 ALL_CCFLAGS=
 ALL_LDFLAGS=
 GENCODE_FLAGS=--gpu-architecture=compute_35
-INCLUDES=-I/usr/local/cuda/samples/common/inc
+INCLUDES=-I/opt/cuda/samples/common/inc -I/usr/local/cuda/samples/common/inc
 
 .PHONY: all clean debug
 
