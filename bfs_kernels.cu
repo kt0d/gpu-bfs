@@ -69,14 +69,16 @@ __global__ void linear_bfs(const int n, const int* row_offset, const int*const c
 
  __device__ int warp_cull(volatile int scratch[WARPS][HASH_RANGE], const int v)
 {
-	unsigned int active = __ballot_sync(FULL_MASK, v >= 0);
-	if( v == -1) return v;
+	//unsigned int active = __ballot_sync(FULL_MASK, v >= 0);
+	//if( v == -1) return v;
 	const int hash = v & (HASH_RANGE-1);
 	const int warp_id = threadIdx.x / WARP_SIZE;
-	scratch[warp_id][hash]= v;
-	__syncwarp(active);
-	const int retrieved = scratch[warp_id][hash];
-	active = __ballot_sync(FULL_MASK, retrieved == v);
+	if(v >= 0)
+		scratch[warp_id][hash]= v;
+	__syncwarp();
+	const int retrieved = v >= 0 ? scratch[warp_id][hash] : v;
+	__syncwarp();
+	unsigned int active = __ballot_sync(FULL_MASK, retrieved == v);
 	if (retrieved == v)
 	{
 		// Vie to be the only thread in warp inspecting vertex v.
@@ -366,7 +368,6 @@ __global__ void expand_contract_bfs(const int n, const int* const row_offset, co
 		if(comm[warp_id][0] == lane_id)
 		{
 			// If won, share your range and enqueue offset to the entire warp.
-			__syncwarp();
 			comm[warp_id][1] = r;
 			comm[warp_id][2] = r_end;
 			comm[warp_id][3] = rsv_rank;
