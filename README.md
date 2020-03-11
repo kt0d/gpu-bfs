@@ -1,6 +1,6 @@
 gpu-bfs
 =======
-CUDA implementation of BFS graph traversal for GPU based on paper by Duane Merill, Michael Garland and Andrew Grimshaw.
+Implementation of BFS graph traversal for CUDA based on paper by Duane Merill, Michael Garland and Andrew Grimshaw.
 
 https://research.nvidia.com/publication/high-performance-and-scalable-gpu-graph-traversal-0
 
